@@ -4,6 +4,8 @@ import path from 'node:path'
 
 export function runMigrations(dbPath: string) {
   const sqlite = new Database(dbPath)
+  sqlite.pragma('journal_mode = WAL')
+  sqlite.pragma('busy_timeout = 10000')
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS _migrations (
       name TEXT PRIMARY KEY,
@@ -11,17 +13,18 @@ export function runMigrations(dbPath: string) {
     );
   `)
   const dir = path.join(process.cwd(), 'drizzle')
-  const applied = new Set(
-    (sqlite.prepare('SELECT name FROM _migrations').all() as { name: string }[]).map((r) => r.name),
-  )
   const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
-  const apply = sqlite.transaction((name: string, sql: string) => {
-    sqlite.exec(sql)
-    sqlite.prepare('INSERT INTO _migrations (name) VALUES (?)').run(name)
+
+  const applyAll = sqlite.transaction(() => {
+    const applied = new Set(
+      (sqlite.prepare('SELECT name FROM _migrations').all() as { name: string }[]).map((r) => r.name),
+    )
+    for (const file of files) {
+      if (applied.has(file)) continue
+      sqlite.exec(readFileSync(path.join(dir, file), 'utf8'))
+      sqlite.prepare('INSERT INTO _migrations (name) VALUES (?)').run(file)
+    }
   })
-  for (const file of files) {
-    if (applied.has(file)) continue
-    apply(file, readFileSync(path.join(dir, file), 'utf8'))
-  }
+  applyAll.immediate()
   sqlite.close()
 }
