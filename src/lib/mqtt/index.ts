@@ -50,6 +50,9 @@ export async function connectMqtt() {
     console.warn('[mqtt] brak konfiguracji hosta')
     return
   }
+  if (!user && !password) {
+    console.warn('[mqtt] brak credentials — połączenie może się nie udać')
+  }
   if (client) {
     client.end(true)
     client = null
@@ -67,9 +70,13 @@ export async function connectMqtt() {
     await refreshSubscriptions()
   })
   client.on('close', () => {
+    console.log('[mqtt] disconnected')
     emitStatus()
   })
-  client.on('error', (err) => console.error('[mqtt] error', err.message))
+  client.on('offline', () => {
+    console.log('[mqtt] offline')
+  })
+  client.on('error', (err) => console.error('[mqtt] error:', err.message))
   client.on('message', async (topic, payload) => {
     const { recordReading } = await import('@/lib/services/sensors')
     const text = payload.toString()
