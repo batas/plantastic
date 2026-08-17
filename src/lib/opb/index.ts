@@ -41,8 +41,8 @@ export interface OpbPlant {
   maintenance?: string
   growth_rate?: string
   salt_tolerant?: string
-  sunlight?: string[]
-  watering?: string[]
+  sunlight?: string[] | string
+  watering?: string[] | string
   drought_tolerant?: boolean
   medicinal?: boolean
   poisonous_to_humans?: number

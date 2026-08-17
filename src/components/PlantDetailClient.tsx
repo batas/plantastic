@@ -41,8 +41,8 @@ type OpbGuide = {
   family?: string
   maintenance?: string
   growth_rate?: string
-  sunlight?: string[]
-  watering?: string[]
+  sunlight?: string[] | string
+  watering?: string[] | string
   image_url?: string
   poisonous_to_humans?: number
   poisonous_to_pets?: number
@@ -345,10 +345,10 @@ export default function PlantDetailClient({
               {opbGuide.maintenance && <GuideRow k="Wymagania" v={opbGuide.maintenance} />}
               {opbGuide.growth_rate && <GuideRow k="Tempo wzrostu" v={opbGuide.growth_rate} />}
               {opbGuide.sunlight && opbGuide.sunlight.length > 0 && (
-                <GuideRow k="Światło" v={opbGuide.sunlight.join(", ")} />
+                <GuideRow k="Światło" v={Array.isArray(opbGuide.sunlight) ? opbGuide.sunlight.join(", ") : opbGuide.sunlight ?? ""} />
               )}
               {opbGuide.watering && opbGuide.watering.length > 0 && (
-                <GuideRow k="Podlewanie" v={opbGuide.watering.join(", ")} />
+                <GuideRow k="Podlewanie" v={Array.isArray(opbGuide.watering) ? opbGuide.watering.join(", ") : opbGuide.watering ?? ""} />
               )}
               {typeof opbGuide.poisonous_to_humans === "number" && opbGuide.poisonous_to_humans > 0 && (
                 <GuideRow k="Toksyczna" v={`dla ludzi (${opbGuide.poisonous_to_humans}/5)`} />
