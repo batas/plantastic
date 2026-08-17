@@ -1,5 +1,11 @@
 ARG BUILD_FROM=node:22-alpine
 FROM ${BUILD_FROM} AS builder
+
+LABEL \
+    org.opencontainers.image.title="Rośliny" \
+    org.opencontainers.image.description="Zarządzanie roślinami domowymi" \
+    org.opencontainers.image.source="https://github.com/batas/plantastic" \
+    org.opencontainers.image.licenses="AGPL-3.0"
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./

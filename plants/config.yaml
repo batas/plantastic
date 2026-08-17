@@ -2,7 +2,8 @@ name: "Rośliny"
 version: "0.1.0"
 slug: plants
 description: "Zarządzanie roślinami domowymi: zdjęcia, timeline, podlewanie/nawożenie, czujniki MQTT, integracja z OpenPlantBook i planami pielęgnacji AI."
-url: "https://github.com/example/plants"
+url: "https://github.com/batas/plantastic"
+image: "ghcr.io/batas/plantastic/plants"
 arch:
   - aarch64
   - amd64
