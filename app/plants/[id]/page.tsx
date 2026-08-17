@@ -1,7 +1,7 @@
 import Link from "next/link"
 import PlantDetailClient from "@/components/PlantDetailClient"
 import { getPlantDetail, getNextCareDates } from "@/lib/services/plants"
-import { getOpbInfo } from "@/lib/opb"
+import { getOpbInfo, translateOpbGuide } from "@/lib/opb"
 import { notFound } from "next/navigation"
 
 export const dynamic = "force-dynamic"
@@ -10,10 +10,11 @@ export default async function PlantPage(props: PageProps<"/plants/[id]">) {
   const { id } = await props.params
   const detail = await getPlantDetail(Number(id))
   if (!detail) notFound()
-  const [careStatus, opb] = await Promise.all([
+  const [careStatus, rawOpb] = await Promise.all([
     getNextCareDates(Number(id)),
     getOpbInfo(detail.plant.scientificName),
   ])
+  const opb = rawOpb ? await translateOpbGuide(rawOpb) : null
   return (
     <div>
       <Link href="/" className="text-sm text-zinc-500 hover:underline">
