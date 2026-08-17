@@ -8,9 +8,6 @@ on:
       - "*"
   workflow_dispatch:
 
-env:
-  APP_DIR: plants
-
 permissions:
   contents: read
 
@@ -19,6 +16,6 @@ jobs:
     name: Build add-on
     uses: ./.github/workflows/build-app.yaml
     with:
-      app: ${{ env.APP_DIR }}
+      app: plants
       publish: true
     secrets: inherit
