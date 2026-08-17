@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  assetPrefix: ".",
+  assetPrefix: process.env.ASSET_PREFIX,
   images: {
     dangerouslyAllowLocalIP: true,
   },
