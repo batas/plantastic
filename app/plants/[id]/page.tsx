@@ -1,20 +1,42 @@
 import Link from "next/link"
 import PlantDetailClient from "@/components/PlantDetailClient"
-import { getPlantDetail, getNextCareDates } from "@/lib/services/plants"
-import { getOpbInfo, translateOpbGuide } from "@/lib/opb"
+import { getPlantDetail, getNextCareDates, getPlant } from "@/lib/services/plants"
+import { getOpbInfo, translateOpbGuide, type OpbPlant } from "@/lib/opb"
 import { notFound } from "next/navigation"
+import { db } from "@/lib/db"
+import { plants } from "@/lib/db/schema"
+import { eq } from "drizzle-orm"
 
 export const dynamic = "force-dynamic"
 
+async function getOpbGuideCached(plantId: number, scientificName: string | null): Promise<OpbPlant | null> {
+  if (!scientificName) return null
+  const plant = await getPlant(plantId)
+  if (!plant) return null
+
+  if (plant.opbGuideJson) {
+    try {
+      return JSON.parse(plant.opbGuideJson) as OpbPlant
+    } catch {}
+  }
+
+  const opb = await getOpbInfo(scientificName)
+  if (!opb) return null
+
+  const translated = await translateOpbGuide(opb)
+  db.update(plants).set({ opbGuideJson: JSON.stringify(translated) }).where(eq(plants.id, plantId)).run()
+  return translated
+}
+
 export default async function PlantPage(props: PageProps<"/plants/[id]">) {
   const { id } = await props.params
-  const detail = await getPlantDetail(Number(id))
+  const plantId = Number(id)
+  const detail = await getPlantDetail(plantId)
   if (!detail) notFound()
-  const [careStatus, rawOpb] = await Promise.all([
-    getNextCareDates(Number(id)),
-    getOpbInfo(detail.plant.scientificName),
+  const [careStatus, opb] = await Promise.all([
+    getNextCareDates(plantId),
+    getOpbGuideCached(plantId, detail.plant.scientificName),
   ])
-  const opb = rawOpb ? await translateOpbGuide(rawOpb) : null
   return (
     <div>
       <Link href="/" className="text-sm text-zinc-500 hover:underline">

@@ -9,6 +9,7 @@ export const plants = sqliteTable(
     species: text('species'),
     scientificName: text('scientific_name'),
     opbId: text('opb_id'),
+    opbGuideJson: text('opb_guide_json'),
     location: text('location'),
     notes: text('notes'),
     waterIntervalDays: integer('water_interval_days'),
