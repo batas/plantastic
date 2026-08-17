@@ -4,13 +4,25 @@ import { getPlant, getNextCareDates } from '@/lib/services/plants'
 import { getSensorMappings } from '@/lib/services/sensors'
 import { CARE_TYPES } from '@/lib/care-types'
 
-let client: MqttClient | null = null
-let statusListeners: Array<(connected: boolean) => void> = []
-const subscribed = new Set<string>()
-const lastPublish: Record<string, number> = {}
+const g = globalThis as unknown as { __mqttClient?: MqttClient | null; __mqttListeners?: Array<(connected: boolean) => void>; __mqttSubscribed?: Set<string>; __mqttLastPublish?: Record<string, number> }
+if (!g.__mqttClient) g.__mqttClient = null
+if (!g.__mqttListeners) g.__mqttListeners = []
+if (!g.__mqttSubscribed) g.__mqttSubscribed = new Set()
+if (!g.__mqttLastPublish) g.__mqttLastPublish = {}
+
+let statusListeners: Array<(connected: boolean) => void>
+let subscribed: Set<string>
+let lastPublish: Record<string, number>
+
+statusListeners = g.__mqttListeners!
+subscribed = g.__mqttSubscribed!
+lastPublish = g.__mqttLastPublish!
+
+function getClient(): MqttClient | null { return g.__mqttClient ?? null }
+function setClient(c: MqttClient | null) { g.__mqttClient = c }
 
 export function isConnected() {
-  return client?.connected ?? false
+  return getClient()?.connected ?? false
 }
 
 export function onStatusChange(fn: (connected: boolean) => void) {
@@ -53,31 +65,31 @@ export async function connectMqtt() {
   if (!user && !password) {
     console.warn('[mqtt] brak credentials — połączenie może się nie udać')
   }
-  if (client) {
-    client.end(true)
-    client = null
+  if (getClient()) {
+    getClient()!.end(true)
+    setClient(null)
   }
   const url = `mqtt://${host}:${port ?? 1883}`
   console.log(`[mqtt] connecting: url=${url} user=${user ?? '(brak)'} password=${maskSecret(password)}`)
   const opts: IClientOptions = { clientId: `plants-${Math.random().toString(16).slice(2, 8)}` }
   if (user) opts.username = user
   if (password) opts.password = password
-  client = mqtt.connect(url, opts)
+  setClient(mqtt.connect(url, opts))
 
-  client.on('connect', async () => {
+  getClient()!.on('connect', async () => {
     console.log('[mqtt] connected')
     emitStatus()
     await refreshSubscriptions()
   })
-  client.on('close', () => {
+  getClient()!.on('close', () => {
     console.log('[mqtt] disconnected')
     emitStatus()
   })
-  client.on('offline', () => {
+  getClient()!.on('offline', () => {
     console.log('[mqtt] offline')
   })
-  client.on('error', (err) => console.error('[mqtt] error:', err.message))
-  client.on('message', async (topic, payload) => {
+  getClient()!.on('error', (err) => console.error('[mqtt] error:', err.message))
+  getClient()!.on('message', async (topic, payload) => {
     const { recordReading } = await import('@/lib/services/sensors')
     const text = payload.toString()
     const value = Number(text)
@@ -91,18 +103,18 @@ export async function connectMqtt() {
 }
 
 export async function refreshSubscriptions() {
-  if (!client?.connected) return
+  if (!getClient()?.connected) return
   const mappings = await getSensorMappings()
   const wanted = new Set(mappings.map((m) => stripPrefix(m.topic)))
   for (const t of wanted) {
     if (!subscribed.has(t)) {
-      client.subscribe(t, (err) => err && console.error('[mqtt] subscribe err', t, err.message))
+      getClient()!.subscribe(t, (err) => err && console.error('[mqtt] subscribe err', t, err.message))
       subscribed.add(t)
     }
   }
   for (const t of subscribed) {
     if (!wanted.has(t)) {
-      client.unsubscribe(t)
+      getClient()!.unsubscribe(t)
       subscribed.delete(t)
     }
   }
@@ -118,12 +130,12 @@ function slugify(s: string) {
 }
 
 function publish(topic: string, value: string, opts?: { retain?: boolean; force?: boolean }) {
-  if (!client?.connected) return
+  if (!getClient()?.connected) return
   const now = Date.now()
   const key = `${topic}=${value}`
   if (!opts?.force && lastPublish[key] && now - lastPublish[key] < 5000) return
   lastPublish[key] = now
-  client.publish(topic, value, { retain: opts?.retain ?? true })
+  getClient()!.publish(topic, value, { retain: opts?.retain ?? true })
 }
 
 export function publishSensorValue(plantId: number, metric: string, value: number) {
@@ -147,7 +159,8 @@ export async function publishCareStatus(plantId: number) {
 
 export function listMqttTopics(): Promise<{ topic: string; value: string }[]> {
   return new Promise((resolve) => {
-    if (!client?.connected) {
+    const c = getClient()
+    if (!c?.connected) {
       resolve([])
       return
     }
@@ -155,16 +168,16 @@ export function listMqttTopics(): Promise<{ topic: string; value: string }[]> {
     const handler = (topic: string, payload: Buffer) => {
       topics.set(topic, payload.toString())
     }
-    client.on('message', handler)
-    client.subscribe('#', (err) => {
+    c.on('message', handler)
+    c.subscribe('#', (err) => {
       if (err) {
-        client?.off('message', handler)
+        c.off('message', handler)
         resolve([])
         return
       }
       setTimeout(() => {
-        client?.unsubscribe('#')
-        client?.off('message', handler)
+        c.unsubscribe('#')
+        c.off('message', handler)
         resolve([...topics.entries()].map(([topic, value]) => ({ topic, value })).sort((a, b) => a.topic.localeCompare(b.topic)))
       }, 2000)
     })
@@ -172,13 +185,14 @@ export function listMqttTopics(): Promise<{ topic: string; value: string }[]> {
 }
 
 export async function publishDiscovery(plantId: number) {
-  if (!client?.connected) return
+  const c = getClient()
+  if (!c?.connected) return
   const plant = await getPlant(plantId)
   if (!plant) return
   const objId = `plant_${plantId}`
   const name = slugify(plant.name) || `plant${plantId}`
   const mk = (component: string, suffix: string, cfg: Record<string, unknown>) =>
-    client!.publish(`homeassistant/${component}/${objId}_${suffix}/config`, JSON.stringify(cfg), { retain: true })
+    c.publish(`homeassistant/${component}/${objId}_${suffix}/config`, JSON.stringify(cfg), { retain: true })
 
   mk('sensor', 'last_watered', {
     name: `${plant.name} ostatnie podlewanie`,

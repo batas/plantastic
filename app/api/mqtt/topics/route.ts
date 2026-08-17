@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server'
-import { listMqttTopics, isConnected } from '@/lib/mqtt'
+import { listMqttTopics } from '@/lib/mqtt'
 
 export async function GET() {
-  if (!isConnected()) {
-    return NextResponse.json({ error: 'MQTT nie jest połączone' }, { status: 503 })
-  }
-
   try {
     const topics = await listMqttTopics()
     return NextResponse.json(topics)
