@@ -65,12 +65,28 @@ export default function IdentifyPage() {
     }
   }
 
-  function goCreate(commonName: string | null, scientificName: string | null, opbId?: string) {
-    const params = new URLSearchParams()
-    if (commonName) params.set("species", commonName)
-    if (scientificName) params.set("scientificName", scientificName)
-    if (opbId) params.set("opbId", String(opbId))
-    router.push(`/plants/new?${params.toString()}`)
+  async function goCreate(commonName: string | null, scientificName: string | null, opbId?: string) {
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        try {
+          sessionStorage.setItem("pendingPhoto", JSON.stringify({ data: reader.result, name: file.name, type: file.type }))
+        } catch {}
+        const params = new URLSearchParams()
+        if (commonName) params.set("species", commonName)
+        if (scientificName) params.set("scientificName", scientificName)
+        if (opbId) params.set("opbId", String(opbId))
+        params.set("hasPhoto", "1")
+        router.push(`/plants/new?${params.toString()}`)
+      }
+      reader.readAsDataURL(file)
+    } else {
+      const params = new URLSearchParams()
+      if (commonName) params.set("species", commonName)
+      if (scientificName) params.set("scientificName", scientificName)
+      if (opbId) params.set("opbId", String(opbId))
+      router.push(`/plants/new?${params.toString()}`)
+    }
   }
 
   const conf = result?.identification.confidence

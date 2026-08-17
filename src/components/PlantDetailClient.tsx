@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import Markdown from "react-markdown"
 import { formatDate, photoUrl } from "@/lib/format"
 import { CARE_META, CARE_TYPES, type CareType } from "@/lib/care-types"
 
@@ -78,6 +79,9 @@ export default function PlantDetailClient({
   const [noteText, setNoteText] = useState("")
   const [topic, setTopic] = useState("")
   const [metric, setMetric] = useState("moisture")
+  const [haTopics, setHaTopics] = useState<string[]>([])
+  const [loadingTopics, setLoadingTopics] = useState(false)
+  const [topicError, setTopicError] = useState("")
 
   async function logCare(kind: CareType) {
     setBusyCare(kind)
@@ -175,6 +179,24 @@ export default function PlantDetailClient({
     })
     setTopic("")
     router.refresh()
+  }
+
+  async function loadTopics() {
+    setLoadingTopics(true)
+    setTopicError("")
+    try {
+      const res = await fetch("/api/mqtt/topics")
+      const data = await res.json()
+      if (!res.ok) {
+        setTopicError(data.error ?? "Nie udało się pobrać topiców")
+        return
+      }
+      setHaTopics(Array.isArray(data) ? data.map((d: { topic: string }) => d.topic) : [])
+    } catch {
+      setTopicError("Błąd połączenia z MQTT")
+    } finally {
+      setLoadingTopics(false)
+    }
   }
 
   async function deletePlant() {
@@ -323,7 +345,13 @@ export default function PlantDetailClient({
                   <span className="text-xs text-zinc-400">{formatDate(entry.createdAt)}</span>
                 </div>
                 {entry.content && (
-                  <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-300">{entry.content}</div>
+                  entry.kind === "care_plan" ? (
+                    <div className="mt-1 space-y-2 text-sm text-zinc-600 dark:text-zinc-300 [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:list-disc">
+                      <Markdown>{entry.content}</Markdown>
+                    </div>
+                  ) : (
+                    <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-300">{entry.content}</div>
+                  )
                 )}
                 {entry.photoId && <PhotoThumb photoId={entry.photoId} photos={detail.photos} />}
               </div>
@@ -385,14 +413,25 @@ export default function PlantDetailClient({
           <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <p className="mb-2 text-xs text-zinc-400">Mapuj topic MQTT do tej rośliny</p>
             <div className="flex flex-col gap-2">
-              <input className={input} placeholder="np. home/plants/1/moisture" value={topic} onChange={(e) => setTopic(e.target.value)} />
+              <div className="flex gap-2">
+                <input className={input} placeholder="np. home/plants/1/moisture" value={topic} onChange={(e) => setTopic(e.target.value)} list="mqtt-topics" />
+                <button type="button" onClick={loadTopics} disabled={loadingTopics} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                  {loadingTopics ? "..." : "Wybierz z HA"}
+                </button>
+              </div>
+              {topicError && <p className="text-xs text-red-600">{topicError}</p>}
+              <datalist id="mqtt-topics">
+                {haTopics.map((t) => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
               <div className="flex gap-2">
                 <select className={input} value={metric} onChange={(e) => setMetric(e.target.value)}>
                   <option value="moisture">Wilgotność</option>
                   <option value="temperature">Temperatura</option>
                   <option value="light">Światło</option>
                 </select>
-                <button onClick={addSensorMapping} className="shrink-0 rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700">
+                <button onClick={addSensorMapping} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">
                   Dodaj
                 </button>
               </div>

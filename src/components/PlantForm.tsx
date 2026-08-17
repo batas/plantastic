@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import type { Plant } from "@/lib/db/schema"
 
@@ -14,6 +14,12 @@ interface OpbResult {
   sunlight?: string[] | string
 }
 
+interface PendingPhoto {
+  data: string
+  name: string
+  type: string
+}
+
 export default function PlantForm({
   plant,
   prefill,
@@ -22,6 +28,8 @@ export default function PlantForm({
   prefill?: { species?: string; scientificName?: string; opbId?: string }
 }) {
   const router = useRouter()
+  const pendingPhotoRef = useRef<PendingPhoto | null>(null)
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: plant?.name ?? "",
     species: plant?.species ?? prefill?.species ?? "",
@@ -40,6 +48,18 @@ export default function PlantForm({
   const [opbError, setOpbError] = useState("")
   const [submitError, setSubmitError] = useState("")
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("pendingPhoto")
+      if (raw) {
+        const photo = JSON.parse(raw) as PendingPhoto
+        pendingPhotoRef.current = photo
+        setPendingPreview(photo.data)
+        sessionStorage.removeItem("pendingPhoto")
+      }
+    } catch {}
+  }, [])
 
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -97,6 +117,17 @@ export default function PlantForm({
         setSubmitError(data?.error ?? "Błąd zapisu rośliny")
         return
       }
+      if (pendingPhotoRef.current && data.id) {
+        try {
+          const bin = atob(pendingPhotoRef.current.data.split(",")[1])
+          const arr = new Uint8Array(bin.length)
+          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+          const blob = new Blob([arr], { type: pendingPhotoRef.current.type })
+          const fd = new FormData()
+          fd.append("file", blob, pendingPhotoRef.current.name)
+          await fetch(`/api/plants/${data.id}/photos`, { method: "POST", body: fd })
+        } catch {}
+      }
       router.push(`/plants/${data.id}`)
       router.refresh()
     } catch {
@@ -111,6 +142,13 @@ export default function PlantForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      {pendingPreview && (
+        <div className="rounded-lg border border-dashed border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-700 dark:bg-emerald-950/30">
+          <p className="mb-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">📷 Zdjęcie z rozpoznania zostanie dodane po zapisaniu</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={pendingPreview} alt="Podgląd" className="h-24 rounded-lg object-cover" />
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className={label}>Nazwa *</label>
