@@ -6,54 +6,19 @@ on:
       - main
     tags:
       - "*"
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 env:
-  MONITORED_FILES: "config.yaml Dockerfile run.sh"
   APP_DIR: plants
 
 permissions:
   contents: read
 
 jobs:
-  init:
-    name: Initialize build
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.filter.outputs.changed }}
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      - name: Get changed files
-        id: changed_files
-        uses: tj-actions/changed-files@v47
-
-      - name: Filter changed files
-        id: filter
-        env:
-          CHANGED_FILES: ${{ steps.changed_files.outputs.all_changed_files }}
-        run: |
-          changed=false
-          for file in ${MONITORED_FILES}; do
-            if [[ "${CHANGED_FILES}" =~ ${APP_DIR}/${file} ]]; then
-              changed=true
-              break
-            fi
-          done
-          if [[ "${CHANGED_FILES}" =~ .github/workflows/(builder|build-app).yaml ]]; then
-            changed=true
-          fi
-          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
-
   build-app:
     name: Build add-on
-    needs: init
-    if: needs.init.outputs.changed == 'true'
     uses: ./.github/workflows/build-app.yaml
     with:
       app: ${{ env.APP_DIR }}
-      publish: ${{ github.event_name == 'push' }}
+      publish: true
     secrets: inherit
