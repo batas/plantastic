@@ -15,7 +15,7 @@ export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]
       kind: 'care_plan',
       title: `Plan pielęgnacji (${result.provider}: ${result.model})`,
       content: result.plan,
-      dataJson: JSON.stringify({ provider: result.provider, model: result.model }),
+      dataJson: JSON.stringify({ provider: result.provider, model: result.model, format: 'markdown' }),
     })
     return NextResponse.json({ ok: true, plan: result.plan, provider: result.provider, model: result.model })
   } catch (err) {

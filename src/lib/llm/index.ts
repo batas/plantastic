@@ -33,7 +33,8 @@ function buildSystemPrompt(): string {
     'przygotuj konkretny plan pielęgnacji po polsku.',
     'Uwzględnij: czy roślina wygląda zdrowo, symptomy problemów (żółknięcie, więdnięcie, szkodniki),',
     'zalecenia dot. podlewania i nawożenia w najbliższym tygodniu, poziom światła i temperaturę.',
-    'Format: zwięzłe sekcje "Stan rośliny", "Co zrobić teraz", "Obserwować pod kątem".',
+    'ODPOWIEDZ W FORMACIE MARKDOWN. Używaj nagłówków (##, ###), list (* i 1.), pogrubień (**tekst**).',
+    'Sekcje: "## Stan rośliny", "## Co zrobić teraz", "## Obserwować pod kątem".',
   ].join(' ')
 }
 

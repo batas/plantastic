@@ -345,7 +345,7 @@ export default function PlantDetailClient({
                   <span className="text-xs text-zinc-400">{formatDate(entry.createdAt)}</span>
                 </div>
                 {entry.content && (
-                  entry.kind === "care_plan" ? (
+                  entry.dataJson && JSON.parse(entry.dataJson).format === "markdown" ? (
                     <div className="mt-1 space-y-2 text-sm text-zinc-600 dark:text-zinc-300 [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:list-disc">
                       <Markdown>{entry.content}</Markdown>
                     </div>
