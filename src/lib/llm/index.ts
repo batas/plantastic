@@ -132,14 +132,40 @@ async function withOllama(plantId: number): Promise<CarePlanResult> {
   return { provider: 'ollama', model, plan: res.choices[0]?.message?.content ?? '', generatedAt: Date.now() }
 }
 
+async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
+  const cfg = getConfig()
+  const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:4000'
+  const client = new OpenAI({ baseURL, apiKey: cfg.llm?.apiKey ?? 'litellm' })
+  const model = cfg.llm?.model ?? 'gpt-4o-mini'
+  const detail = await getPlantDetail(plantId)
+  const plant = detail!.plant
+  const content: OpenAIContent = []
+  content.push({ type: 'text', text: buildUserPrompt(plant, detail) })
+  for (const photo of detail!.photos) {
+    const { data, mime } = photoBase64(photo)
+    content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } })
+    if (content.length >= 8) break
+  }
+  const res = await client.chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: buildSystemPrompt() },
+      { role: 'user', content },
+    ],
+    max_tokens: 1500,
+  })
+  return { provider: 'litellm', model, plan: res.choices[0]?.message?.content ?? '', generatedAt: Date.now() }
+}
+
 export async function generateCarePlan(plantId: number, provider?: LlmProvider): Promise<CarePlanResult> {
   const cfg = getConfig()
   const selected = provider ?? cfg.llm?.provider ?? 'ollama'
-  if (!cfg.llm?.apiKey && selected !== 'ollama') {
+  if (!cfg.llm?.apiKey && selected !== 'ollama' && selected !== 'litellm') {
     throw new Error(`Brak klucza API dla providera ${selected}. Skonfiguruj go w ustawieniach.`)
   }
   if (selected === 'anthropic') return withAnthropic(plantId)
   if (selected === 'openai') return withOpenAi(plantId)
+  if (selected === 'litellm') return withLiteLLM(plantId)
   return withOllama(plantId)
 }
 

@@ -35,6 +35,26 @@ export default function SettingsClient({
   const [opbClientId, setOpbClientId] = useState("")
   const [opbSecret, setOpbSecret] = useState("")
   const [newMapping, setNewMapping] = useState({ plantId: "", topic: "", metric: "moisture" })
+  const [testResult, setTestResult] = useState<{ type: string; ok: boolean; message: string; details?: string } | null>(null)
+  const [testing, setTesting] = useState<string | null>(null)
+
+  async function testConnection(type: string) {
+    setTesting(type)
+    setTestResult(null)
+    try {
+      const res = await fetch("/api/settings/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
+      })
+      const data = await res.json()
+      setTestResult({ type, ok: data.ok, message: data.message, details: data.details })
+    } catch {
+      setTestResult({ type, ok: false, message: "Błąd połączenia z serwerem" })
+    } finally {
+      setTesting(null)
+    }
+  }
 
   async function load() {
     const [settings, sens, pl] = await Promise.all([
@@ -118,9 +138,14 @@ export default function SettingsClient({
       <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold">MQTT</h2>
-          <span className={`rounded-full px-2 py-0.5 text-xs ${connected ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-            {connected ? "Połączono" : "Rozłączono"}
-          </span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => testConnection("mqtt")} disabled={testing === "mqtt"} className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+              {testing === "mqtt" ? "Testowanie..." : "Testuj połączenie"}
+            </button>
+            <span className={`rounded-full px-2 py-0.5 text-xs ${connected ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+              {connected ? "Połączono" : "Rozłączono"}
+            </span>
+          </div>
         </div>
         <form onSubmit={save} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -153,21 +178,27 @@ export default function SettingsClient({
               <option value="ollama">Ollama (lokalnie)</option>
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
+              <option value="litellm">LiteLLM (proxy)</option>
             </select>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={label}>Model</label>
-              <input className={input} value={cfg.llm.model} onChange={(e) => setCfg((c) => ({ ...c, llm: { ...c.llm, model: e.target.value } }))} placeholder="gpt-4o-mini / llava" />
+              <input className={input} value={cfg.llm.model} onChange={(e) => setCfg((c) => ({ ...c, llm: { ...c.llm, model: e.target.value } }))} placeholder="gpt-4o-mini / llava / model-name" />
             </div>
             <div>
-              <label className={label}>Base URL (dla Ollama)</label>
-              <input className={input} value={cfg.llm.baseUrl} onChange={(e) => setCfg((c) => ({ ...c, llm: { ...c.llm, baseUrl: e.target.value } }))} placeholder="http://localhost:11434/v1" />
+              <label className={label}>Base URL (dla Ollama / LiteLLM)</label>
+              <input className={input} value={cfg.llm.baseUrl} onChange={(e) => setCfg((c) => ({ ...c, llm: { ...c.llm, baseUrl: e.target.value } }))} placeholder="http://localhost:11434/v1 / http://localhost:4000" />
             </div>
           </div>
           <div>
             <label className={label}>Klucz API {cfg.llm.hasApiKey && "(zapisany)"}</label>
-            <input className={input} type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
+            <div className="flex gap-2">
+              <input className={input + " flex-1"} type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
+              <button type="button" onClick={() => testConnection("llm")} disabled={testing === "llm"} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                {testing === "llm" ? "Testowanie..." : "Testuj LLM"}
+              </button>
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -176,9 +207,20 @@ export default function SettingsClient({
             </div>
             <div>
               <label className={label}>OpenPlantBook secret {cfg.opb.hasSecret && "✓"}</label>
-              <input className={input} type="password" value={opbSecret} onChange={(e) => setOpbSecret(e.target.value)} />
+              <div className="flex gap-2">
+                <input className={input + " flex-1"} type="password" value={opbSecret} onChange={(e) => setOpbSecret(e.target.value)} placeholder="••••••••" />
+                <button type="button" onClick={() => testConnection("opb")} disabled={testing === "opb"} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                  {testing === "opb" ? "Testowanie..." : "Testuj OPB"}
+                </button>
+              </div>
             </div>
           </div>
+          {testResult && (
+            <div className={`rounded-lg px-3 py-2 text-sm ${testResult.ok ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
+              <span className="font-medium">{testResult.ok ? "OK" : "Błąd"}:</span> {testResult.message}
+              {testResult.details && <span className="ml-1 text-xs opacity-70">({testResult.details})</span>}
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <button type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
               {saving ? "Zapisywanie..." : "Zapisz"}

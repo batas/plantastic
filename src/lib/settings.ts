@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { getDataDir } from '@/lib/db'
 
-export type LlmProvider = 'openai' | 'anthropic' | 'ollama'
+export type LlmProvider = 'openai' | 'anthropic' | 'ollama' | 'litellm'
 
 export interface AppConfig {
   mqtt?: {

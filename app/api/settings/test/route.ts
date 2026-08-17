@@ -1,0 +1,76 @@
+import { NextResponse } from 'next/server'
+import OpenAI from 'openai'
+import { Anthropic } from '@anthropic-ai/sdk'
+import { getConfig } from '@/lib/settings'
+import { connectMqtt, isConnected } from '@/lib/mqtt'
+
+export async function POST(request: Request) {
+  const body = await request.json()
+  const type = body.type as string
+  try {
+    if (type === 'mqtt') {
+      await connectMqtt()
+      const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+      for (let i = 0; i < 10; i++) {
+        if (isConnected()) return NextResponse.json({ ok: true, message: 'Połączono z MQTT' })
+        await wait(500)
+      }
+      return NextResponse.json({ ok: false, message: 'Nie udało się połączyć z MQTT' }, { status: 500 })
+    }
+
+    if (type === 'llm') {
+      const cfg = getConfig()
+      const provider = cfg.llm?.provider ?? 'ollama'
+      if (provider === 'anthropic') {
+        if (!cfg.llm?.apiKey) return NextResponse.json({ ok: false, message: 'Brak klucza API' }, { status: 400 })
+        const client = new Anthropic({ apiKey: cfg.llm.apiKey })
+        const model = cfg.llm.model ?? 'claude-3-5-sonnet-latest'
+        const res = await client.messages.create({
+          model,
+          max_tokens: 50,
+          messages: [{ role: 'user', content: 'Odpowiedz tylko: OK' }],
+        })
+        const text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
+        return NextResponse.json({ ok: true, message: `Anthropic OK — ${model}`, details: text.slice(0, 100) })
+      }
+
+      const baseURL = provider === 'ollama'
+        ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1'
+        : provider === 'litellm'
+          ? cfg.llm?.baseUrl ?? 'http://localhost:4000'
+          : undefined
+      const apiKey = provider === 'ollama' ? 'ollama' : provider === 'litellm' ? (cfg.llm?.apiKey ?? 'litellm') : (cfg.llm?.apiKey ?? '')
+      const client = new OpenAI({ baseURL, apiKey })
+      const model = provider === 'ollama' ? cfg.llm?.model ?? 'llava' : cfg.llm?.model ?? 'gpt-4o-mini'
+      const res = await client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: 'Odpowiedz tylko: OK' }],
+        max_tokens: 50,
+      })
+      const text = res.choices[0]?.message?.content ?? ''
+      return NextResponse.json({ ok: true, message: `${provider} OK — ${model}`, details: text.slice(0, 100) })
+    }
+
+    if (type === 'opb') {
+      const cfg = getConfig()
+      if (!cfg.opb?.clientId || !cfg.opb?.secret) {
+        return NextResponse.json({ ok: false, message: 'Brak client_id lub secret' }, { status: 400 })
+      }
+      const res = await fetch('https://open.plantbook.io/api/v1/tenant/auth/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: cfg.opb.clientId, client_secret: cfg.opb.secret }).toString(),
+      })
+      if (!res.ok) {
+        const err = await res.text()
+        return NextResponse.json({ ok: false, message: `OPB auth failed: ${res.status}`, details: err.slice(0, 200) }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, message: 'OpenPlantBook połączony' })
+    }
+
+    return NextResponse.json({ ok: false, message: `Nieznany typ testu: ${type}` }, { status: 400 })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ ok: false, message: msg }, { status: 500 })
+  }
+}

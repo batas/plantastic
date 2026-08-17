@@ -79,9 +79,12 @@ async function callVision(prompt: string, images: { data: string; mime: string }
       .join('\n')
   }
 
-  const client = new OpenAI({ apiKey: provider === 'ollama' ? 'ollama' : (cfg.llm?.apiKey ?? ''), baseURL: provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : undefined })
+  const client = new OpenAI({
+    apiKey: provider === 'ollama' ? 'ollama' : provider === 'litellm' ? (cfg.llm?.apiKey ?? 'litellm') : (cfg.llm?.apiKey ?? ''),
+    baseURL: provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : provider === 'litellm' ? cfg.llm?.baseUrl ?? 'http://localhost:4000' : undefined,
+  })
   const model =
-    provider === 'ollama' ? cfg.llm?.model ?? 'llava' : cfg.llm?.model ?? 'gpt-4o-mini'
+    provider === 'ollama' ? cfg.llm?.model ?? 'llava' : provider === 'litellm' ? cfg.llm?.model ?? 'gpt-4o-mini' : cfg.llm?.model ?? 'gpt-4o-mini'
   const parts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text: prompt }]
   for (const img of images) {
     parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } })

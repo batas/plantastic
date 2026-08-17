@@ -34,7 +34,7 @@ schema:
   mqtt_port: int
   mqtt_user: str
   mqtt_password: str
-  llm_provider: "list(openai|anthropic|ollama)"
+  llm_provider: "list(openai|anthropic|ollama|litellm)"
   llm_model: str
   llm_base_url: str
   llm_api_key: str
