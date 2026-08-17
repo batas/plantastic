@@ -10,8 +10,8 @@ interface OpbResult {
   scientific_name?: string
   common_name?: string
   alias?: string | null
-  watering?: string[]
-  sunlight?: string[]
+  watering?: string[] | string
+  sunlight?: string[] | string
 }
 
 export default function PlantForm({
@@ -149,7 +149,7 @@ export default function PlantForm({
                   <span>
                     {r.common_name ?? r.alias ?? r.display_pid} <span className="text-zinc-400 italic">{r.scientific_name ?? r.display_pid}</span>
                   </span>
-                  <span className="text-xs text-zinc-400">{r.watering?.join(", ")}</span>
+                  <span className="text-xs text-zinc-400">{Array.isArray(r.watering) ? r.watering.join(", ") : r.watering ?? ""}</span>
                 </button>
               </li>
             ))}

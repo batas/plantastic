@@ -18,8 +18,8 @@ type OpbHit = {
   common_name?: string
   alias?: string | null
   family?: string
-  watering?: string[]
-  sunlight?: string[]
+  watering?: string[] | string
+  sunlight?: string[] | string
 }
 
 export default function IdentifyPage() {
