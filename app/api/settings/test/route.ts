@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { Anthropic } from '@anthropic-ai/sdk'
-import { getConfig, writeOptions } from '@/lib/settings'
+import { getConfig, writeOptions, maskSecret } from '@/lib/settings'
 import { connectMqtt, isConnected } from '@/lib/mqtt'
 
 export async function POST(request: Request) {
@@ -10,6 +10,7 @@ export async function POST(request: Request) {
   try {
     if (type === 'mqtt') {
       const mqttCfg = body.mqtt as { host?: string; port?: number; user?: string; password?: string } | undefined
+      console.log(`[test] mqtt: host=${mqttCfg?.host} port=${mqttCfg?.port} user=${mqttCfg?.user} password=${maskSecret(mqttCfg?.password)}`)
       if (mqttCfg) {
         const patch: Record<string, unknown> = {}
         if (mqttCfg.host !== undefined) patch.mqtt_host = mqttCfg.host
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
     if (type === 'llm') {
       const cfg = getConfig()
       const provider = cfg.llm?.provider ?? 'ollama'
+      console.log(`[test] llm: provider=${provider} model=${cfg.llm?.model} apiKey=${maskSecret(cfg.llm?.apiKey)} baseURL=${cfg.llm?.baseUrl ?? '(default)'}`)
       if (provider === 'anthropic') {
         if (!cfg.llm?.apiKey) return NextResponse.json({ ok: false, message: 'Brak klucza API' }, { status: 400 })
         const client = new Anthropic({ apiKey: cfg.llm.apiKey })
@@ -62,6 +64,7 @@ export async function POST(request: Request) {
 
     if (type === 'opb') {
       const cfg = getConfig()
+      console.log(`[test] opb: clientId=${cfg.opb?.clientId} secret=${maskSecret(cfg.opb?.secret)}`)
       if (!cfg.opb?.clientId || !cfg.opb?.secret) {
         return NextResponse.json({ ok: false, message: 'Brak client_id lub secret' }, { status: 400 })
       }
@@ -80,6 +83,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: `Nieznany typ testu: ${type}` }, { status: 400 })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[test] ${type} failed:`, msg)
     return NextResponse.json({ ok: false, message: msg }, { status: 500 })
   }
 }

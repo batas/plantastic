@@ -1,5 +1,5 @@
 import mqtt, { type MqttClient, type IClientOptions } from 'mqtt'
-import { getConfig, fetchHassMqttConfig } from '@/lib/settings'
+import { getConfig, fetchHassMqttConfig, maskSecret } from '@/lib/settings'
 import { getPlant, getNextCareDates } from '@/lib/services/plants'
 import { getSensorMappings } from '@/lib/services/sensors'
 import { CARE_TYPES } from '@/lib/care-types'
@@ -55,6 +55,7 @@ export async function connectMqtt() {
     client = null
   }
   const url = `mqtt://${host}:${port ?? 1883}`
+  console.log(`[mqtt] connecting: url=${url} user=${user ?? '(brak)'} password=${maskSecret(password)}`)
   const opts: IClientOptions = { clientId: `plants-${Math.random().toString(16).slice(2, 8)}` }
   if (user) opts.username = user
   if (password) opts.password = password

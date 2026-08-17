@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import OpenAI from 'openai'
 import { Anthropic } from '@anthropic-ai/sdk'
-import { getConfig, type LlmProvider } from '@/lib/settings'
+import { getConfig, type LlmProvider, maskSecret } from '@/lib/settings'
 import { getPhotosDir } from '@/lib/settings'
 import { getPlantDetail } from '@/lib/services/plants'
 
@@ -66,8 +66,9 @@ async function callVision(prompt: string, images: { data: string; mime: string }
   const provider = selectedProvider()
   if (provider === 'anthropic') {
     if (!cfg.llm?.apiKey) throw new Error('Brak klucza API dla Anthropic')
-    const client = new Anthropic({ apiKey: cfg.llm.apiKey })
     const model = cfg.llm.model ?? 'claude-3-5-sonnet-latest'
+    console.log(`[llm] identify/anthropic: model=${model} apiKey=${maskSecret(cfg.llm.apiKey)}`)
+    const client = new Anthropic({ apiKey: cfg.llm.apiKey })
     const content: Anthropic.ContentBlockParam[] = [{ type: 'text', text: prompt }]
     for (const img of images) {
       content.push({ type: 'image', source: { type: 'base64', media_type: img.mime as 'image/png' | 'image/jpeg' | 'image/webp', data: img.data } })
@@ -79,12 +80,11 @@ async function callVision(prompt: string, images: { data: string; mime: string }
       .join('\n')
   }
 
-  const client = new OpenAI({
-    apiKey: provider === 'ollama' ? 'ollama' : (cfg.llm?.apiKey ?? ''),
-    baseURL: provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : provider === 'litellm' ? cfg.llm?.baseUrl ?? 'http://localhost:4000' : undefined,
-  })
-  const model =
-    provider === 'ollama' ? cfg.llm?.model ?? 'llava' : provider === 'litellm' ? cfg.llm?.model ?? 'gpt-4o-mini' : cfg.llm?.model ?? 'gpt-4o-mini'
+  const apiKey = provider === 'ollama' ? 'ollama' : (cfg.llm?.apiKey ?? '')
+  const baseURL = provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : provider === 'litellm' ? cfg.llm?.baseUrl ?? 'http://localhost:4000' : undefined
+  const model = provider === 'ollama' ? cfg.llm?.model ?? 'llava' : cfg.llm?.model ?? 'gpt-4o-mini'
+  console.log(`[llm] identify/${provider}: model=${model} baseURL=${baseURL ?? '(default)'} apiKey=${provider === 'ollama' ? '(ollama)' : maskSecret(apiKey)}`)
+  const client = new OpenAI({ apiKey, baseURL })
   const parts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text: prompt }]
   for (const img of images) {
     parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } })

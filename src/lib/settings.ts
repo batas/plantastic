@@ -104,6 +104,12 @@ export function getConfig(): AppConfig {
   }
 }
 
+export function maskSecret(value: string | undefined): string {
+  if (!value) return '(brak)'
+  if (value.length <= 6) return '***'
+  return value.slice(0, 3) + '***' + value.slice(-3)
+}
+
 export function getPhotosDir() {
   const dir = getDataDir()
   const photosDir = `${dir}/photos`

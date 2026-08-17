@@ -1,4 +1,4 @@
-import { getConfig } from '@/lib/settings'
+import { getConfig, maskSecret } from '@/lib/settings'
 
 const API = 'https://open.plantbook.io/api/v1'
 
@@ -8,6 +8,7 @@ async function getToken(): Promise<string | null> {
   const cfg = getConfig()
   if (!cfg.opb?.clientId || !cfg.opb?.secret) return null
   if (tokenCache && tokenCache.expires > Date.now() / 1000 + 60) return tokenCache.token
+  console.log(`[opb] authenticating: clientId=${cfg.opb.clientId} secret=${maskSecret(cfg.opb.secret)}`)
   const res = await fetch(`${API}/tenant/auth/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { Anthropic } from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
-import { getConfig, type LlmProvider } from '@/lib/settings'
+import { getConfig, type LlmProvider, maskSecret } from '@/lib/settings'
 import { getPhotosDir } from '@/lib/settings'
 import { getPlantDetail } from '@/lib/services/plants'
 import { getOpbInfo } from '@/lib/opb'
@@ -60,8 +60,9 @@ function buildUserPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlan
 
 async function withOpenAi(plantId: number): Promise<CarePlanResult> {
   const cfg = getConfig()
-  const client = new OpenAI({ apiKey: cfg.llm?.apiKey })
   const model = cfg.llm?.model ?? 'gpt-4o-mini'
+  console.log(`[llm] openai: model=${model} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
+  const client = new OpenAI({ apiKey: cfg.llm?.apiKey })
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: OpenAIContent = []
@@ -84,8 +85,9 @@ async function withOpenAi(plantId: number): Promise<CarePlanResult> {
 
 async function withAnthropic(plantId: number): Promise<CarePlanResult> {
   const cfg = getConfig()
-  const client = new Anthropic({ apiKey: cfg.llm?.apiKey })
   const model = cfg.llm?.model ?? 'claude-3-5-sonnet-latest'
+  console.log(`[llm] anthropic: model=${model} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
+  const client = new Anthropic({ apiKey: cfg.llm?.apiKey })
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: AnthropicContent = []
@@ -111,8 +113,9 @@ async function withAnthropic(plantId: number): Promise<CarePlanResult> {
 async function withOllama(plantId: number): Promise<CarePlanResult> {
   const cfg = getConfig()
   const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:11434/v1'
-  const client = new OpenAI({ baseURL, apiKey: 'ollama' })
   const model = cfg.llm?.model ?? 'llava'
+  console.log(`[llm] ollama: model=${model} baseURL=${baseURL}`)
+  const client = new OpenAI({ baseURL, apiKey: 'ollama' })
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: OpenAIContent = []
@@ -135,8 +138,9 @@ async function withOllama(plantId: number): Promise<CarePlanResult> {
 async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
   const cfg = getConfig()
   const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:4000'
-  const client = new OpenAI({ baseURL, apiKey: cfg.llm?.apiKey })
   const model = cfg.llm?.model ?? 'gpt-4o-mini'
+  console.log(`[llm] litellm: model=${model} baseURL=${baseURL} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
+  const client = new OpenAI({ baseURL, apiKey: cfg.llm?.apiKey })
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: OpenAIContent = []
