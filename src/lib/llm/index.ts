@@ -135,7 +135,7 @@ async function withOllama(plantId: number): Promise<CarePlanResult> {
 async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
   const cfg = getConfig()
   const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:4000'
-  const client = new OpenAI({ baseURL, apiKey: cfg.llm?.apiKey ?? 'litellm' })
+  const client = new OpenAI({ baseURL, apiKey: cfg.llm?.apiKey })
   const model = cfg.llm?.model ?? 'gpt-4o-mini'
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
@@ -160,7 +160,7 @@ async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
 export async function generateCarePlan(plantId: number, provider?: LlmProvider): Promise<CarePlanResult> {
   const cfg = getConfig()
   const selected = provider ?? cfg.llm?.provider ?? 'ollama'
-  if (!cfg.llm?.apiKey && selected !== 'ollama' && selected !== 'litellm') {
+  if (!cfg.llm?.apiKey && selected !== 'ollama') {
     throw new Error(`Brak klucza API dla providera ${selected}. Skonfiguruj go w ustawieniach.`)
   }
   if (selected === 'anthropic') return withAnthropic(plantId)

@@ -80,7 +80,7 @@ async function callVision(prompt: string, images: { data: string; mime: string }
   }
 
   const client = new OpenAI({
-    apiKey: provider === 'ollama' ? 'ollama' : provider === 'litellm' ? (cfg.llm?.apiKey ?? 'litellm') : (cfg.llm?.apiKey ?? ''),
+    apiKey: provider === 'ollama' ? 'ollama' : (cfg.llm?.apiKey ?? ''),
     baseURL: provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : provider === 'litellm' ? cfg.llm?.baseUrl ?? 'http://localhost:4000' : undefined,
   })
   const model =
