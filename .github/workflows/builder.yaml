@@ -14,7 +14,7 @@ permissions:
 env:
   IMAGE_NAME: ghcr.io/batas/plantastic/plants
   APP_DIR: plants
-  ARCHITECTURES: '["amd64", "aarch64", "armv7"]'
+  ARCHITECTURES: '["amd64", "aarch64"]'
 
 jobs:
   init:
