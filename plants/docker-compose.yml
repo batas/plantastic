@@ -1,0 +1,29 @@
+services:
+  plants:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: plants
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - plants-data:/data
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/data
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - MQTT_HOST=${MQTT_HOST:-}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_USER=${MQTT_USER:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - OPB_CLIENT_ID=${OPB_CLIENT_ID:-}
+      - OPB_SECRET=${OPB_SECRET:-}
+
+volumes:
+  plants-data:
