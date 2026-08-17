@@ -94,10 +94,14 @@ export async function POST(request: Request) {
       if (!cfg.opb?.clientId || !cfg.opb?.secret) {
         return NextResponse.json({ ok: false, message: 'Brak client_id lub secret' }, { status: 400 })
       }
-      const res = await fetch('https://open.plantbook.io/api/v1/tenant/auth/', {
+      const res = await fetch('https://open.plantbook.io/api/v1/token/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: cfg.opb.clientId, client_secret: cfg.opb.secret }).toString(),
+        body: new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: cfg.opb.clientId,
+          client_secret: cfg.opb.secret,
+        }).toString(),
       })
       if (!res.ok) {
         const err = await res.text()

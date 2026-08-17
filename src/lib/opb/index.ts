@@ -9,15 +9,19 @@ async function getToken(): Promise<string | null> {
   if (!cfg.opb?.clientId || !cfg.opb?.secret) return null
   if (tokenCache && tokenCache.expires > Date.now() / 1000 + 60) return tokenCache.token
   console.log(`[opb] authenticating: clientId=${cfg.opb.clientId} secret=${maskSecret(cfg.opb.secret)}`)
-  const res = await fetch(`${API}/tenant/auth/`, {
+  const res = await fetch(`${API}/token/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: cfg.opb.clientId, client_secret: cfg.opb.secret }).toString(),
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: cfg.opb.clientId,
+      client_secret: cfg.opb.secret,
+    }).toString(),
   })
   if (!res.ok) throw new Error(`OPB auth failed: ${res.status}`)
-  const data = (await res.json()) as { token: string; expires: number }
-  tokenCache = { token: data.token, expires: data.expires }
-  return data.token
+  const data = (await res.json()) as { access_token: string; expires_in: number }
+  tokenCache = { token: data.access_token, expires: Date.now() / 1000 + data.expires_in }
+  return data.access_token
 }
 
 export interface OpbPlant {
@@ -46,7 +50,7 @@ export interface OpbPlant {
 export async function searchOpb(query: string): Promise<OpbPlant[]> {
   const token = await getToken()
   if (!token) throw new Error('OpenPlantBook: brak client_id/secret')
-  const res = await fetch(`${API}/plant/search?q=${encodeURIComponent(query)}&limit=8`, {
+  const res = await fetch(`${API}/plant/search?alias=${encodeURIComponent(query)}&limit=8`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(`OPB search failed: ${res.status}`)
