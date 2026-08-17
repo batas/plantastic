@@ -37,7 +37,7 @@ export default function SettingsClient({
   const [newMapping, setNewMapping] = useState({ plantId: "", topic: "", metric: "moisture" })
   const [testResult, setTestResult] = useState<{ type: string; ok: boolean; message: string; details?: string } | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
-  const [haEntities, setHaEntities] = useState<{ entity_id: string; friendly_name: string; device_class: string | null; unit: string | null; state: string; domain: string }[]>([])
+  const [haEntities, setHaEntities] = useState<{ topic: string; value: string }[]>([])
   const [haLoading, setHaLoading] = useState(false)
   const [haError, setHaError] = useState<string | null>(null)
   const [showHaPicker, setShowHaPicker] = useState(false)
@@ -144,7 +144,7 @@ export default function SettingsClient({
     setHaLoading(true)
     setHaError(null)
     try {
-      const res = await fetch("/api/ha/entities")
+      const res = await fetch("/api/mqtt/topics")
       if (!res.ok) {
         const data = await res.json()
         setHaError(data.error ?? `Błąd ${res.status}`)
@@ -154,14 +154,14 @@ export default function SettingsClient({
       setHaEntities(entities)
       setShowHaPicker(true)
     } catch {
-      setHaError("Nie udało się pobrać encji z HA")
+      setHaError("Nie udało się pobrać topiców z MQTT")
     } finally {
       setHaLoading(false)
     }
   }
 
-  function selectHaEntity(entityId: string) {
-    setNewMapping((m) => ({ ...m, topic: entityId }))
+  function selectHaEntity(topic: string) {
+    setNewMapping((m) => ({ ...m, topic }))
     setShowHaPicker(false)
     setHaSearch("")
   }
@@ -169,9 +169,8 @@ export default function SettingsClient({
   const filteredHaEntities = haEntities.filter(
     (e) =>
       haSearch === "" ||
-      e.friendly_name.toLowerCase().includes(haSearch.toLowerCase()) ||
-      e.entity_id.toLowerCase().includes(haSearch.toLowerCase()) ||
-      (e.device_class ?? "").toLowerCase().includes(haSearch.toLowerCase())
+      e.topic.toLowerCase().includes(haSearch.toLowerCase()) ||
+      e.value.toLowerCase().includes(haSearch.toLowerCase())
   )
 
   return (
@@ -288,8 +287,13 @@ export default function SettingsClient({
             </select>
           </div>
           <div className="min-w-56 flex-1">
-            <label className={label}>Topic</label>
-            <input className={input} placeholder="home/plants/1/moisture" value={newMapping.topic} onChange={(e) => setNewMapping((m) => ({ ...m, topic: e.target.value }))} />
+            <label className={label}>Topic / Entity ID</label>
+            <div className="flex gap-2">
+              <input className={input + " flex-1"} placeholder="home/plants/1/moisture lub sensor.nazwa" value={newMapping.topic} onChange={(e) => setNewMapping((m) => ({ ...m, topic: e.target.value }))} />
+              <button type="button" onClick={fetchHaEntities} disabled={haLoading} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                {haLoading ? "Szukam..." : "Przeglądaj MQTT"}
+              </button>
+            </div>
           </div>
           <div>
             <label className={label}>Metryka</label>
@@ -303,6 +307,32 @@ export default function SettingsClient({
             Dodaj
           </button>
         </div>
+
+        {showHaPicker && (
+          <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-medium">Topici MQTT ({filteredHaEntities.length})</h3>
+              <button type="button" onClick={() => { setShowHaPicker(false); setHaSearch("") }} className="text-xs text-zinc-500 hover:underline">zamknij</button>
+            </div>
+            <input className={input + " mb-2"} placeholder="Szukaj topicu..." value={haSearch} onChange={(e) => setHaSearch(e.target.value)} autoFocus />
+            {haError && <p className="mb-2 text-sm text-red-600">{haError}</p>}
+            <div className="max-h-64 space-y-1 overflow-y-auto">
+              {filteredHaEntities.map((e) => (
+                <button
+                  key={e.topic}
+                  type="button"
+                  onClick={() => selectHaEntity(e.topic)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white dark:hover:bg-zinc-700"
+                >
+                  <span className="flex-1 truncate font-mono text-xs">{e.topic}</span>
+                  {e.value && <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{e.value}</span>}
+                </button>
+              ))}
+              {filteredHaEntities.length === 0 && <p className="text-sm text-zinc-400">Brak wyników.</p>}
+            </div>
+          </div>
+        )}
+
         <ul className="mt-3 space-y-1">
           {mappings.map((m) => (
             <li key={m.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800">

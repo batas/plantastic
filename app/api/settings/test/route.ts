@@ -32,6 +32,7 @@ export async function POST(request: Request) {
       const cfg = getConfig()
       const provider = cfg.llm?.provider ?? 'ollama'
       console.log(`[test] llm: provider=${provider} model=${cfg.llm?.model} apiKey=${maskSecret(cfg.llm?.apiKey)} baseURL=${cfg.llm?.baseUrl ?? '(default)'}`)
+
       if (provider === 'anthropic') {
         if (!cfg.llm?.apiKey) return NextResponse.json({ ok: false, message: 'Brak klucza API' }, { status: 400 })
         const client = new Anthropic({ apiKey: cfg.llm.apiKey })
@@ -45,13 +46,37 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, message: `Anthropic OK — ${model}`, details: text.slice(0, 100) })
       }
 
+      if (provider === 'litellm') {
+        if (!cfg.llm?.apiKey) return NextResponse.json({ ok: false, message: 'Brak klucza API' }, { status: 400 })
+        const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
+        const model = cfg.llm?.model ?? 'gpt-4o-mini'
+        console.log(`[test] litellm fetch: ${base}/chat/completions model=${model}`)
+        const res = await fetch(`${base}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cfg.llm.apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: 'Odpowiedz tylko: OK' }],
+            max_tokens: 50,
+          }),
+        })
+        const data = await res.json() as Record<string, unknown>
+        if (!res.ok) {
+          const detail = typeof data.error === 'object' && data.error !== null ? (data.error as Record<string, unknown>).message : JSON.stringify(data)
+          return NextResponse.json({ ok: false, message: `LiteLLM ${res.status}: ${detail}` }, { status: 502 })
+        }
+        const text = Array.isArray(data.choices) ? ((data.choices[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content ?? '' : ''
+        return NextResponse.json({ ok: true, message: `LiteLLM OK — ${model}`, details: String(text).slice(0, 100) })
+      }
+
       const baseURL = provider === 'ollama'
         ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1'
-        : provider === 'litellm'
-          ? cfg.llm?.baseUrl ?? 'http://localhost:4000'
-          : undefined
+        : undefined
       const apiKey = provider === 'ollama' ? 'ollama' : (cfg.llm?.apiKey ?? '')
-      const client = new OpenAI({ baseURL, apiKey, defaultHeaders: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : undefined })
+      const client = new OpenAI({ baseURL, apiKey })
       const model = provider === 'ollama' ? cfg.llm?.model ?? 'llava' : cfg.llm?.model ?? 'gpt-4o-mini'
       const res = await client.chat.completions.create({
         model,

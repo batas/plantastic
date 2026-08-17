@@ -145,6 +145,32 @@ export async function publishCareStatus(plantId: number) {
   }
 }
 
+export function listMqttTopics(): Promise<{ topic: string; value: string }[]> {
+  return new Promise((resolve) => {
+    if (!client?.connected) {
+      resolve([])
+      return
+    }
+    const topics = new Map<string, string>()
+    const handler = (topic: string, payload: Buffer) => {
+      topics.set(topic, payload.toString())
+    }
+    client.on('message', handler)
+    client.subscribe('#', (err) => {
+      if (err) {
+        client?.off('message', handler)
+        resolve([])
+        return
+      }
+      setTimeout(() => {
+        client?.unsubscribe('#')
+        client?.off('message', handler)
+        resolve([...topics.entries()].map(([topic, value]) => ({ topic, value })).sort((a, b) => a.topic.localeCompare(b.topic)))
+      }, 2000)
+    })
+  })
+}
+
 export async function publishDiscovery(plantId: number) {
   if (!client?.connected) return
   const plant = await getPlant(plantId)

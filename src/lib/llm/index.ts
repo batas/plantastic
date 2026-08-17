@@ -137,10 +137,11 @@ async function withOllama(plantId: number): Promise<CarePlanResult> {
 
 async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
   const cfg = getConfig()
-  const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:4000'
+  const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
   const model = cfg.llm?.model ?? 'gpt-4o-mini'
-  console.log(`[llm] litellm: model=${model} baseURL=${baseURL} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
-  const client = new OpenAI({ baseURL, apiKey: cfg.llm?.apiKey, defaultHeaders: cfg.llm?.apiKey ? { 'Authorization': `Bearer ${cfg.llm.apiKey}` } : undefined })
+  const apiKey = cfg.llm?.apiKey
+  console.log(`[llm] litellm: model=${model} baseURL=${base} apiKey=${maskSecret(apiKey)}`)
+  if (!apiKey) throw new Error('Brak klucza API dla LiteLLM. Skonfiguruj go w ustawieniach.')
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: OpenAIContent = []
@@ -150,15 +151,28 @@ async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
     content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } })
     if (content.length >= 8) break
   }
-  const res = await client.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: buildSystemPrompt() },
-      { role: 'user', content },
-    ],
-    max_tokens: 1500,
+  const res = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: buildSystemPrompt() },
+        { role: 'user', content },
+      ],
+      max_tokens: 1500,
+    }),
   })
-  return { provider: 'litellm', model, plan: res.choices[0]?.message?.content ?? '', generatedAt: Date.now() }
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`LiteLLM ${res.status}: ${err.slice(0, 300)}`)
+  }
+  const data = await res.json() as Record<string, unknown>
+  const text = Array.isArray(data.choices) ? ((data.choices[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content ?? '' : ''
+  return { provider: 'litellm', model, plan: String(text), generatedAt: Date.now() }
 }
 
 export async function generateCarePlan(plantId: number, provider?: LlmProvider): Promise<CarePlanResult> {

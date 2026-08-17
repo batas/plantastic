@@ -81,10 +81,40 @@ async function callVision(prompt: string, images: { data: string; mime: string }
   }
 
   const apiKey = provider === 'ollama' ? 'ollama' : (cfg.llm?.apiKey ?? '')
-  const baseURL = provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : provider === 'litellm' ? cfg.llm?.baseUrl ?? 'http://localhost:4000' : undefined
   const model = provider === 'ollama' ? cfg.llm?.model ?? 'llava' : cfg.llm?.model ?? 'gpt-4o-mini'
+
+  if (provider === 'litellm') {
+    if (!apiKey) throw new Error('Brak klucza API dla LiteLLM')
+    const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
+    console.log(`[llm] identify/litellm: model=${model} baseURL=${base} apiKey=${maskSecret(apiKey)}`)
+    const parts: { type: string; text?: string; image_url?: { url: string } }[] = [{ type: 'text', text: prompt }]
+    for (const img of images) {
+      parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } })
+    }
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: parts }],
+        max_tokens: 800,
+        response_format: { type: 'json_object' },
+      }),
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`LiteLLM ${res.status}: ${err.slice(0, 300)}`)
+    }
+    const data = await res.json() as Record<string, unknown>
+    return Array.isArray(data.choices) ? String(((data.choices[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content ?? '') : ''
+  }
+
+  const baseURL = provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : undefined
   console.log(`[llm] identify/${provider}: model=${model} baseURL=${baseURL ?? '(default)'} apiKey=${provider === 'ollama' ? '(ollama)' : maskSecret(apiKey)}`)
-  const client = new OpenAI({ apiKey, baseURL, defaultHeaders: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : undefined })
+  const client = new OpenAI({ apiKey, baseURL })
   const parts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text: prompt }]
   for (const img of images) {
     parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } })
