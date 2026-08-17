@@ -25,9 +25,11 @@ async function getToken(): Promise<string | null> {
 }
 
 export interface OpbPlant {
-  pid: number
+  pid: string
   display_pid: string
-  scientific_name: string
+  alias?: string | null
+  category?: string | null
+  scientific_name?: string
   scientific_name_authorship?: string
   common_name?: string
   family?: string
@@ -54,8 +56,23 @@ export async function searchOpb(query: string): Promise<OpbPlant[]> {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(`OPB search failed: ${res.status}`)
-  const data = (await res.json()) as { results: OpbPlant[] }
-  return data.results ?? []
+  const data = (await res.json()) as { results: { pid: string; display_pid: string; alias?: string; category?: string }[] }
+  const results = data.results ?? []
+  const enriched = await Promise.all(
+    results.slice(0, 5).map(async (r) => {
+      try {
+        const detail = await fetch(`${API}/plant/detail/${encodeURIComponent(r.pid)}/?include=care`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (detail.ok) {
+          const full = await detail.json() as OpbPlant
+          return { ...r, ...full, pid: r.pid, display_pid: r.display_pid }
+        }
+      } catch {}
+      return { ...r, scientific_name: r.display_pid, common_name: r.alias }
+    })
+  )
+  return enriched
 }
 
 export async function getOpbInfo(scientificName?: string | null): Promise<OpbPlant | null> {

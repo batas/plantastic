@@ -8,7 +8,7 @@ export const plants = sqliteTable(
     name: text('name').notNull(),
     species: text('species'),
     scientificName: text('scientific_name'),
-    opbId: integer('opb_id'),
+    opbId: text('opb_id'),
     location: text('location'),
     notes: text('notes'),
     waterIntervalDays: integer('water_interval_days'),

@@ -12,9 +12,11 @@ type Identification = {
 }
 
 type OpbHit = {
-  pid: number
-  scientific_name: string
+  pid: string
+  display_pid: string
+  scientific_name?: string
   common_name?: string
+  alias?: string | null
   family?: string
   watering?: string[]
   sunlight?: string[]
@@ -63,7 +65,7 @@ export default function IdentifyPage() {
     }
   }
 
-  function goCreate(commonName: string | null, scientificName: string | null, opbId?: number) {
+  function goCreate(commonName: string | null, scientificName: string | null, opbId?: string) {
     const params = new URLSearchParams()
     if (commonName) params.set("species", commonName)
     if (scientificName) params.set("scientificName", scientificName)
@@ -168,12 +170,12 @@ export default function IdentifyPage() {
                 {result.opb.map((r) => (
                   <li key={r.pid}>
                     <button
-                      onClick={() => goCreate(r.common_name ?? null, r.scientific_name, r.pid)}
+                      onClick={() => goCreate(r.common_name ?? r.alias ?? null, r.scientific_name ?? r.display_pid, r.pid)}
                       className="flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                     >
                       <span>
-                        {r.common_name ?? r.scientific_name}
-                        <span className="text-zinc-400 italic"> {r.scientific_name}</span>
+                        {r.common_name ?? r.alias ?? r.display_pid}
+                        <span className="text-zinc-400 italic"> {r.scientific_name ?? r.display_pid}</span>
                       </span>
                       <span className="text-xs text-zinc-400">wybierz →</span>
                     </button>

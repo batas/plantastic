@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     name,
     species: body.species ? String(body.species) : undefined,
     scientificName: body.scientificName ? String(body.scientificName) : undefined,
-    opbId: body.opbId ? Number(body.opbId) : undefined,
+    opbId: body.opbId ? String(body.opbId) : undefined,
     location: body.location ? String(body.location) : undefined,
     notes: body.notes ? String(body.notes) : undefined,
     waterIntervalDays: body.waterIntervalDays != null ? Number(body.waterIntervalDays) : undefined,

@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation"
 import type { Plant } from "@/lib/db/schema"
 
 interface OpbResult {
-  pid: number
-  scientific_name: string
+  pid: string
+  display_pid: string
+  scientific_name?: string
   common_name?: string
+  alias?: string | null
   watering?: string[]
   sunlight?: string[]
 }
@@ -17,7 +19,7 @@ export default function PlantForm({
   prefill,
 }: {
   plant?: Plant | null
-  prefill?: { species?: string; scientificName?: string; opbId?: number }
+  prefill?: { species?: string; scientificName?: string; opbId?: string }
 }) {
   const router = useRouter()
   const [form, setForm] = useState({
@@ -63,12 +65,12 @@ export default function PlantForm({
   function pickOpb(r: OpbResult) {
     setForm((f) => ({
       ...f,
-      species: r.common_name ?? "",
-      scientificName: r.scientific_name,
-      opbId: String(r.pid),
+      species: r.common_name ?? r.alias ?? "",
+      scientificName: r.scientific_name ?? r.display_pid,
+      opbId: r.pid,
     }))
     setOpbResults([])
-    setOpbQuery(r.scientific_name)
+    setOpbQuery(r.scientific_name ?? r.display_pid)
   }
 
   async function submit(e: React.FormEvent) {
@@ -78,7 +80,7 @@ export default function PlantForm({
     try {
       const payload = {
         ...form,
-        opbId: form.opbId ? Number(form.opbId) : null,
+        opbId: form.opbId || null,
         waterIntervalDays: form.waterIntervalDays ? Number(form.waterIntervalDays) : null,
         fertilizeIntervalDays: form.fertilizeIntervalDays ? Number(form.fertilizeIntervalDays) : null,
         mistIntervalDays: form.mistIntervalDays ? Number(form.mistIntervalDays) : null,
@@ -145,7 +147,7 @@ export default function PlantForm({
                   className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 >
                   <span>
-                    {r.common_name ?? r.scientific_name} <span className="text-zinc-400 italic">{r.scientific_name}</span>
+                    {r.common_name ?? r.alias ?? r.display_pid} <span className="text-zinc-400 italic">{r.scientific_name ?? r.display_pid}</span>
                   </span>
                   <span className="text-xs text-zinc-400">{r.watering?.join(", ")}</span>
                 </button>

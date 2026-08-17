@@ -14,7 +14,7 @@ export default async function NewPlantPage(props: { searchParams: Promise<Record
         prefill={{
           species: one("species") ?? "",
           scientificName: one("scientificName") ?? "",
-          opbId: one("opbId") ? Number(one("opbId")) : undefined,
+          opbId: one("opbId") ?? undefined,
         }}
       />
     </div>

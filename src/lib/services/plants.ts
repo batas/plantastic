@@ -15,7 +15,7 @@ export interface PlantInput {
   name: string
   species?: string
   scientificName?: string
-  opbId?: number
+  opbId?: string
   location?: string
   notes?: string
   waterIntervalDays?: number
