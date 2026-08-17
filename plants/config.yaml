@@ -1,5 +1,5 @@
 name: "Rośliny"
-version: "0.1.3"
+version: "0.1.4"
 slug: plants
 description: "Zarządzanie roślinami domowymi: zdjęcia, timeline, podlewanie/nawożenie, czujniki MQTT, integracja z OpenPlantBook i planami pielęgnacji AI."
 url: "https://github.com/batas/plantastic"
@@ -8,11 +8,9 @@ arch:
   - aarch64
   - amd64
 init: false
-ingress: true
-ingress_port: 3000
-ingress_stream: false
+ingress: false
 ports:
-  3000/tcp: null
+  3000/tcp: 3000
 startup: application
 boot: auto
 stage: experimental

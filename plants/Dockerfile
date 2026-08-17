@@ -25,7 +25,6 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/public ./public
 COPY run.sh /run.sh
-COPY patch-basepath.mjs /patch-basepath.mjs
 RUN chmod a+x /run.sh
 EXPOSE 3000
 CMD ["/run.sh"]
