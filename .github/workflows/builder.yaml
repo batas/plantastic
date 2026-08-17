@@ -13,7 +13,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/batas/plantastic/plants
-  APP_DIR: plants
+  APP_DIR: .
   ARCHITECTURES: '["amd64", "aarch64"]'
 
 jobs:
@@ -61,7 +61,7 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
           container-registry-password: ${{ secrets.GITHUB_TOKEN }}
-          context: "./${{ env.APP_DIR }}"
+          context: "."
           image: ${{ matrix.image }}
           image-tags: |
             ${{ needs.init.outputs.version }}

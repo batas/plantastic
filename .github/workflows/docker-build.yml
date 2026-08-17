@@ -37,7 +37,7 @@ jobs:
           if [ "${{ github.ref_type }}" = "tag" ]; then
             VERSION="${{ github.ref_name }}"
           else
-            VERSION="$(node -p "require('./plants/package.json').version")"
+            VERSION="$(node -p "require('./package.json').version")"
           fi
           TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
@@ -46,7 +46,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ./plants
+          context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

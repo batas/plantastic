@@ -1,7 +1,7 @@
 services:
   plants:
     build:
-      context: ./plants
+      context: .
       dockerfile: Dockerfile
     container_name: plants
     restart: unless-stopped
