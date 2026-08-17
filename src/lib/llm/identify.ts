@@ -96,6 +96,7 @@ async function callVision(prompt: string, images: { data: string; mime: string }
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
+        'x-litellm-api-key': apiKey,
       },
       body: JSON.stringify({
         model,

@@ -56,6 +56,7 @@ export async function POST(request: Request) {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${cfg.llm.apiKey}`,
+            'x-litellm-api-key': cfg.llm.apiKey,
           },
           body: JSON.stringify({
             model,

@@ -156,6 +156,7 @@ async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
+      'x-litellm-api-key': apiKey,
     },
     body: JSON.stringify({
       model,
