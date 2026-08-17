@@ -140,7 +140,7 @@ async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
   const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:4000'
   const model = cfg.llm?.model ?? 'gpt-4o-mini'
   console.log(`[llm] litellm: model=${model} baseURL=${baseURL} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
-  const client = new OpenAI({ baseURL, apiKey: cfg.llm?.apiKey })
+  const client = new OpenAI({ baseURL, apiKey: cfg.llm?.apiKey, defaultHeaders: cfg.llm?.apiKey ? { 'Authorization': `Bearer ${cfg.llm.apiKey}` } : undefined })
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: OpenAIContent = []

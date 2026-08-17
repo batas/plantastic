@@ -84,7 +84,7 @@ async function callVision(prompt: string, images: { data: string; mime: string }
   const baseURL = provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : provider === 'litellm' ? cfg.llm?.baseUrl ?? 'http://localhost:4000' : undefined
   const model = provider === 'ollama' ? cfg.llm?.model ?? 'llava' : cfg.llm?.model ?? 'gpt-4o-mini'
   console.log(`[llm] identify/${provider}: model=${model} baseURL=${baseURL ?? '(default)'} apiKey=${provider === 'ollama' ? '(ollama)' : maskSecret(apiKey)}`)
-  const client = new OpenAI({ apiKey, baseURL })
+  const client = new OpenAI({ apiKey, baseURL, defaultHeaders: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : undefined })
   const parts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text: prompt }]
   for (const img of images) {
     parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } })

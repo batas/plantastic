@@ -50,8 +50,8 @@ export async function POST(request: Request) {
         : provider === 'litellm'
           ? cfg.llm?.baseUrl ?? 'http://localhost:4000'
           : undefined
-      const apiKey = provider === 'ollama' ? 'ollama' : provider === 'litellm' ? (cfg.llm?.apiKey ?? 'litellm') : (cfg.llm?.apiKey ?? '')
-      const client = new OpenAI({ baseURL, apiKey })
+      const apiKey = provider === 'ollama' ? 'ollama' : (cfg.llm?.apiKey ?? '')
+      const client = new OpenAI({ baseURL, apiKey, defaultHeaders: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : undefined })
       const model = provider === 'ollama' ? cfg.llm?.model ?? 'llava' : cfg.llm?.model ?? 'gpt-4o-mini'
       const res = await client.chat.completions.create({
         model,

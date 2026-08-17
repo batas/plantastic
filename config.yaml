@@ -15,7 +15,7 @@ startup: application
 boot: auto
 stage: experimental
 hassio_api: true
-homeassistant_api: false
+homeassistant_api: true
 host_network: false
 options:
   mqtt_host: core-mosquitto

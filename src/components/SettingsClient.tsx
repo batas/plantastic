@@ -37,6 +37,11 @@ export default function SettingsClient({
   const [newMapping, setNewMapping] = useState({ plantId: "", topic: "", metric: "moisture" })
   const [testResult, setTestResult] = useState<{ type: string; ok: boolean; message: string; details?: string } | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
+  const [haEntities, setHaEntities] = useState<{ entity_id: string; friendly_name: string; device_class: string | null; unit: string | null; state: string; domain: string }[]>([])
+  const [haLoading, setHaLoading] = useState(false)
+  const [haError, setHaError] = useState<string | null>(null)
+  const [showHaPicker, setShowHaPicker] = useState(false)
+  const [haSearch, setHaSearch] = useState("")
 
   async function testConnection(type: string) {
     setTesting(type)
@@ -134,6 +139,40 @@ export default function SettingsClient({
     await fetch(`/api/sensors?id=${id}`, { method: "DELETE" })
     await load()
   }
+
+  async function fetchHaEntities() {
+    setHaLoading(true)
+    setHaError(null)
+    try {
+      const res = await fetch("/api/ha/entities")
+      if (!res.ok) {
+        const data = await res.json()
+        setHaError(data.error ?? `Błąd ${res.status}`)
+        return
+      }
+      const entities = await res.json()
+      setHaEntities(entities)
+      setShowHaPicker(true)
+    } catch {
+      setHaError("Nie udało się pobrać encji z HA")
+    } finally {
+      setHaLoading(false)
+    }
+  }
+
+  function selectHaEntity(entityId: string) {
+    setNewMapping((m) => ({ ...m, topic: entityId }))
+    setShowHaPicker(false)
+    setHaSearch("")
+  }
+
+  const filteredHaEntities = haEntities.filter(
+    (e) =>
+      haSearch === "" ||
+      e.friendly_name.toLowerCase().includes(haSearch.toLowerCase()) ||
+      e.entity_id.toLowerCase().includes(haSearch.toLowerCase()) ||
+      (e.device_class ?? "").toLowerCase().includes(haSearch.toLowerCase())
+  )
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
