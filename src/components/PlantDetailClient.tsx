@@ -48,6 +48,51 @@ type OpbGuide = {
   poisonous_to_pets?: number
 }
 
+const SUNLIGHT_MAP: Record<string, string> = {
+  'full sun': 'pełne słońce',
+  'part shade': 'półcień',
+  'partial shade': 'półcień',
+  'shade': 'cień',
+  'full shade': 'pełny cień',
+  'indirect light': 'światło pośrednie',
+  'bright indirect light': 'jasne światło pośrednie',
+  'low light': 'mało światła',
+}
+
+const WATERING_MAP: Record<string, string> = {
+  'high': 'obfite',
+  'medium': 'umiarkowane',
+  'low': 'oszczędne',
+  'regular': 'regularne',
+  'occasional': 'okazjonalne',
+  'drought tolerant': 'toleruje suszę',
+}
+
+const MAINTENANCE_MAP: Record<string, string> = {
+  'high': 'wysokie',
+  'medium': 'średnie',
+  'low': 'niskie',
+  'easy': 'łatwe',
+  'moderate': 'umiarkowane',
+  'difficult': 'wymagające',
+}
+
+const GROWTH_MAP: Record<string, string> = {
+  'fast': 'szybkie',
+  'medium': 'średnie',
+  'slow': 'wolne',
+}
+
+function translateVal(map: Record<string, string>, val: string): string {
+  const lower = val.toLowerCase()
+  return map[lower] ?? val
+}
+
+function translateArray(map: Record<string, string>, val: string[] | string): string {
+  const items = Array.isArray(val) ? val : val.split(',').map(s => s.trim())
+  return items.map(v => translateVal(map, v)).join(', ')
+}
+
 const KIND_LABEL: Record<string, string> = {
   photo: "📷 Zdjęcie",
   care_plan: "🤖 Plan pielęgnacji",
@@ -342,19 +387,19 @@ export default function PlantDetailClient({
                 <GuideRow k="Nazwa potoczna" v={opbGuide.common_name} />
               )}
               {opbGuide.family && <GuideRow k="Rodzina" v={opbGuide.family} />}
-              {opbGuide.maintenance && <GuideRow k="Wymagania" v={opbGuide.maintenance} />}
-              {opbGuide.growth_rate && <GuideRow k="Tempo wzrostu" v={opbGuide.growth_rate} />}
+              {opbGuide.maintenance && <GuideRow k="Wymagania" v={translateVal(MAINTENANCE_MAP, opbGuide.maintenance)} />}
+              {opbGuide.growth_rate && <GuideRow k="Tempo wzrostu" v={translateVal(GROWTH_MAP, opbGuide.growth_rate)} />}
               {opbGuide.sunlight && opbGuide.sunlight.length > 0 && (
-                <GuideRow k="Światło" v={Array.isArray(opbGuide.sunlight) ? opbGuide.sunlight.join(", ") : opbGuide.sunlight ?? ""} />
+                <GuideRow k="Światło" v={translateArray(SUNLIGHT_MAP, opbGuide.sunlight)} />
               )}
               {opbGuide.watering && opbGuide.watering.length > 0 && (
-                <GuideRow k="Podlewanie" v={Array.isArray(opbGuide.watering) ? opbGuide.watering.join(", ") : opbGuide.watering ?? ""} />
+                <GuideRow k="Podlewanie" v={translateArray(WATERING_MAP, opbGuide.watering)} />
               )}
               {typeof opbGuide.poisonous_to_humans === "number" && opbGuide.poisonous_to_humans > 0 && (
-                <GuideRow k="Toksyczna" v={`dla ludzi (${opbGuide.poisonous_to_humans}/5)`} />
+                <GuideRow k="⚠️ Toksyczna dla ludzi" v={`${opbGuide.poisonous_to_humans}/5`} />
               )}
               {typeof opbGuide.poisonous_to_pets === "number" && opbGuide.poisonous_to_pets > 0 && (
-                <GuideRow k="Toksyczna" v={`dla zwierząt (${opbGuide.poisonous_to_pets}/5)`} />
+                <GuideRow k="⚠️ Toksyczna dla zwierząt" v={`${opbGuide.poisonous_to_pets}/5`} />
               )}
             </dl>
           </section>
