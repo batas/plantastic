@@ -42,10 +42,14 @@ export default function SettingsClient({
     setTesting(type)
     setTestResult(null)
     try {
+      const payload: Record<string, unknown> = { type }
+      if (type === "mqtt") {
+        payload.mqtt = { host: cfg.mqtt.host, port: cfg.mqtt.port, user: cfg.mqtt.user, password: pw || undefined }
+      }
       const res = await fetch("/api/settings/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       setTestResult({ type, ok: data.ok, message: data.message, details: data.details })

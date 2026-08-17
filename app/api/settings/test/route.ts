@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { Anthropic } from '@anthropic-ai/sdk'
-import { getConfig } from '@/lib/settings'
+import { getConfig, writeOptions } from '@/lib/settings'
 import { connectMqtt, isConnected } from '@/lib/mqtt'
 
 export async function POST(request: Request) {
@@ -9,6 +9,15 @@ export async function POST(request: Request) {
   const type = body.type as string
   try {
     if (type === 'mqtt') {
+      const mqttCfg = body.mqtt as { host?: string; port?: number; user?: string; password?: string } | undefined
+      if (mqttCfg) {
+        const patch: Record<string, unknown> = {}
+        if (mqttCfg.host !== undefined) patch.mqtt_host = mqttCfg.host
+        if (mqttCfg.port !== undefined) patch.mqtt_port = mqttCfg.port
+        if (mqttCfg.user !== undefined) patch.mqtt_user = mqttCfg.user
+        if (mqttCfg.password !== undefined) patch.mqtt_password = mqttCfg.password
+        writeOptions(patch)
+      }
       await connectMqtt()
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
       for (let i = 0; i < 10; i++) {
