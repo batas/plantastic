@@ -30,7 +30,7 @@ jobs:
       - name: Get version
         id: version
         run: |
-          VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('${{ env.APP_DIR }}/config.yaml'))['version'])")
+          VERSION=$(grep '^version:' "${{ env.APP_DIR }}/config.yaml" | awk '{print $2}' | tr -d '"')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare build matrix
@@ -39,6 +39,7 @@ jobs:
         with:
           architectures: ${{ env.ARCHITECTURES }}
           image-name: plants
+          registry-prefix: ghcr.io/batas/plantastic
 
   build:
     name: Build ${{ matrix.arch }} image
