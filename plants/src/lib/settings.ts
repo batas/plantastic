@@ -47,6 +47,40 @@ export function writeOptions(patch: Record<string, unknown>) {
   return opts
 }
 
+interface HassMqttConfig {
+  mqtt_host?: string
+  mqtt_port?: number
+  mqtt_user?: string
+  mqtt_password?: string
+}
+
+export async function fetchHassMqttConfig(): Promise<HassMqttConfig | null> {
+  const token = process.env.SUPERVISOR_TOKEN
+  if (!token) return null
+  try {
+    const res = await fetch('http://supervisor/core/api/config', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      console.warn('[settings] Supervisor API returned', res.status)
+      return null
+    }
+    const data = await res.json() as Record<string, unknown>
+    const core = data.core_config as Record<string, unknown> | undefined
+    const mqtt = (core?.mqtt ?? core?.MQTT ?? data.mqtt) as Record<string, unknown> | undefined
+    if (!mqtt) return null
+    const host = (mqtt.host as string) ?? (mqtt.broker as string)
+    const port = Number(mqtt.port ?? 1883)
+    const user = (mqtt.user as string) ?? (mqtt.username as string)
+    const password = mqtt.password as string | undefined
+    if (!host) return null
+    return { mqtt_host: host, mqtt_port: port, mqtt_user: user, mqtt_password: password }
+  } catch (err) {
+    console.warn('[settings] Supervisor API fetch failed:', err)
+    return null
+  }
+}
+
 export function getConfig(): AppConfig {
   const opts = readOptions()
   return {

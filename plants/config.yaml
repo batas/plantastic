@@ -1,5 +1,5 @@
 name: "Rośliny"
-version: "0.1.1"
+version: "0.1.3"
 slug: plants
 description: "Zarządzanie roślinami domowymi: zdjęcia, timeline, podlewanie/nawożenie, czujniki MQTT, integracja z OpenPlantBook i planami pielęgnacji AI."
 url: "https://github.com/batas/plantastic"
@@ -16,7 +16,7 @@ ports:
 startup: application
 boot: auto
 stage: experimental
-hassio_api: false
+hassio_api: true
 homeassistant_api: false
 host_network: false
 options:

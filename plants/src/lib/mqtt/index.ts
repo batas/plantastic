@@ -1,5 +1,5 @@
 import mqtt, { type MqttClient, type IClientOptions } from 'mqtt'
-import { getConfig } from '@/lib/settings'
+import { getConfig, fetchHassMqttConfig } from '@/lib/settings'
 import { getPlant, getNextCareDates } from '@/lib/services/plants'
 import { getSensorMappings } from '@/lib/services/sensors'
 import { CARE_TYPES } from '@/lib/care-types'
@@ -34,7 +34,18 @@ function stripPrefix(topic: string): string {
 
 export async function connectMqtt() {
   const cfg = getConfig()
-  const { host, port, user, password } = cfg.mqtt ?? {}
+  let { host, port, user, password } = cfg.mqtt ?? {}
+
+  if (!user && !password && process.env.SUPERVISOR_TOKEN) {
+    const ha = await fetchHassMqttConfig()
+    if (ha) {
+      host = host ?? ha.mqtt_host
+      port = port ?? ha.mqtt_port
+      user = user ?? ha.mqtt_user
+      password = password ?? ha.mqtt_password
+    }
+  }
+
   if (!host) {
     console.warn('[mqtt] brak konfiguracji hosta')
     return
