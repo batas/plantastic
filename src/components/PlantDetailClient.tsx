@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Markdown from "react-markdown"
@@ -96,6 +96,34 @@ export default function PlantDetailClient({
   const [reidentifying, setReidentifying] = useState(false)
   const [reidentifyError, setReidentifyError] = useState("")
   const [reidentifyResult, setReidentifyResult] = useState<{ identification: { scientificName: string | null; commonName: string | null; confidence: number | null }; opb: { pid: string; display_pid: string; scientific_name?: string; common_name?: string; alias?: string | null }[] } | null>(null)
+  const [progressSteps, setProgressSteps] = useState<{ label: string; done: boolean }[]>([])
+  const [progressElapsed, setProgressElapsed] = useState(0)
+  const [progressLabel, setProgressLabel] = useState("")
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const isBusy = planning || checking
+
+  useEffect(() => {
+    if (isBusy) {
+      setProgressElapsed(0)
+      timerRef.current = setInterval(() => setProgressElapsed((p) => p + 1), 1000)
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current)
+      timerRef.current = null
+      setProgressSteps([])
+      setProgressLabel("")
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [isBusy])
+
+  function startProgress(label: string, steps: string[]) {
+    setProgressLabel(label)
+    setProgressSteps(steps.map((s) => ({ label: s, done: false })))
+  }
+
+  function advanceProgress(index: number) {
+    setProgressSteps((prev) => prev.map((s, i) => i <= index ? { ...s, done: true } : s))
+  }
 
   const filteredHaDevices = haDevices.filter(
     (d) => {
@@ -129,13 +157,27 @@ export default function PlantDetailClient({
   async function generatePlan() {
     setPlanning(true)
     setPlanError("")
+    startProgress("Generowanie planu pielęgnacji", [
+      "Zbieranie danych rośliny...",
+      "Pobieranie historii odczytów sensorów...",
+      "Analiza przez AI...",
+      "Zapisywanie planu...",
+    ])
+    advanceProgress(0)
     try {
+      await new Promise((r) => setTimeout(r, 400))
+      advanceProgress(1)
+      await new Promise((r) => setTimeout(r, 1500))
+      advanceProgress(2)
       const res = await fetch(`/api/plants/${plant.id}/care-plan`, { method: "POST" })
+      advanceProgress(2)
       const data = await res.json()
       if (!res.ok) {
         setPlanError(data.error ?? "Błąd generowania planu")
         return
       }
+      advanceProgress(3)
+      await new Promise((r) => setTimeout(r, 300))
       router.refresh()
     } catch {
       setPlanError("Błąd połączenia")
@@ -147,13 +189,27 @@ export default function PlantDetailClient({
   async function checkHealth() {
     setChecking(true)
     setPlanError("")
+    startProgress("Przegląd stanu rośliny (Plant Doctor)", [
+      "Ładowanie zdjęć i danych...",
+      "Analiza wizualna przez AI...",
+      "Ocena stanu zdrowia...",
+      "Zapisywanie wyników...",
+    ])
+    advanceProgress(0)
     try {
+      await new Promise((r) => setTimeout(r, 400))
+      advanceProgress(1)
+      await new Promise((r) => setTimeout(r, 1500))
+      advanceProgress(2)
       const res = await fetch(`/api/plants/${plant.id}/health`, { method: "POST" })
+      advanceProgress(2)
       const data = await res.json()
       if (!res.ok) {
         setPlanError(data.error ?? "Błąd przeglądu stanu")
         return
       }
+      advanceProgress(3)
+      await new Promise((r) => setTimeout(r, 300))
       router.refresh()
     } catch {
       setPlanError("Błąd połączenia")
@@ -361,6 +417,41 @@ export default function PlantDetailClient({
             </button>
           </div>
           {planError && <p className="mt-2 text-sm text-red-600">{planError}</p>}
+          {isBusy && progressSteps.length > 0 && (
+            <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{progressLabel}</p>
+                <span className="text-xs text-zinc-400 tabular-nums">{progressElapsed}s</span>
+              </div>
+              <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                <div
+                  className="h-full rounded-full bg-violet-500 transition-all duration-500 ease-out"
+                  style={{ width: `${Math.min((progressSteps.filter((s) => s.done).length / progressSteps.length) * 100, 95)}%` }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                {progressSteps.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    {s.done ? (
+                      <svg className="h-3.5 w-3.5 shrink-0 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : i === progressSteps.findIndex((p) => !p.done) ? (
+                      <svg className="h-3.5 w-3.5 shrink-0 animate-spin text-violet-500" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <span className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span className={s.done ? "text-zinc-500 dark:text-zinc-400" : i === progressSteps.findIndex((p) => !p.done) ? "text-zinc-700 font-medium dark:text-zinc-200" : "text-zinc-400 dark:text-zinc-500"}>
+                      {s.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700">
               {reidentifying ? "🔍 Rozpoznawanie..." : "🔍 Rozpoznaj na nowo"}
