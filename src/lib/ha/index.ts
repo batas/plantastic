@@ -37,16 +37,24 @@ export async function getStates(domain?: string): Promise<HaState[]> {
   const cfg = getConfig()
   const url = cfg.ha?.url
   const token = cfg.ha?.token
-  if (!url || !token) return []
+  if (!url || !token) {
+    console.warn('[ha] getStates: brak url lub tokena')
+    return []
+  }
   try {
     const res = await fetch(`${url.replace(/\/+$/, '')}/api/states`, {
       headers: getHeaders(token),
     })
-    if (!res.ok) return []
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error(`[ha] getStates: HTTP ${res.status}`, body.slice(0, 200))
+      return []
+    }
     const states = (await res.json()) as HaState[]
     if (domain) return states.filter((s) => s.entity_id.startsWith(`${domain}.`))
     return states
-  } catch {
+  } catch (err) {
+    console.error('[ha] getStates error:', err)
     return []
   }
 }
@@ -62,7 +70,8 @@ export async function getState(entityId: string): Promise<HaState | null> {
     })
     if (!res.ok) return null
     return (await res.json()) as HaState
-  } catch {
+  } catch (err) {
+    console.error('[ha] getState error:', entityId, err)
     return null
   }
 }
@@ -87,16 +96,24 @@ export async function getDevices(): Promise<HaDevice[]> {
   const cfg = getConfig()
   const url = cfg.ha?.url
   const token = cfg.ha?.token
-  if (!url || !token) return []
+  if (!url || !token) {
+    console.warn('[ha] getDevices: brak url lub tokena')
+    return []
+  }
   try {
     const res = await fetch(`${url.replace(/\/+$/, '')}/api/config/device_registry/list`, {
       method: 'POST',
       headers: getHeaders(token),
       body: JSON.stringify({}),
     })
-    if (!res.ok) return []
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error(`[ha] getDevices: HTTP ${res.status}`, body.slice(0, 200))
+      return []
+    }
     return (await res.json()) as HaDevice[]
-  } catch {
+  } catch (err) {
+    console.error('[ha] getDevices error:', err)
     return []
   }
 }
@@ -105,16 +122,24 @@ export async function getEntityRegistry(): Promise<HaEntityRegistryEntry[]> {
   const cfg = getConfig()
   const url = cfg.ha?.url
   const token = cfg.ha?.token
-  if (!url || !token) return []
+  if (!url || !token) {
+    console.warn('[ha] getEntityRegistry: brak url lub tokena')
+    return []
+  }
   try {
     const res = await fetch(`${url.replace(/\/+$/, '')}/api/config/entity_registry/list`, {
       method: 'POST',
       headers: getHeaders(token),
       body: JSON.stringify({}),
     })
-    if (!res.ok) return []
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error(`[ha] getEntityRegistry: HTTP ${res.status}`, body.slice(0, 200))
+      return []
+    }
     return (await res.json()) as HaEntityRegistryEntry[]
-  } catch {
+  } catch (err) {
+    console.error('[ha] getEntityRegistry error:', err)
     return []
   }
 }
@@ -127,11 +152,15 @@ export interface HaDeviceWithSensors {
 export async function getDevicesWithSensors(): Promise<HaDeviceWithSensors[]> {
   const [devices, entityRegistry, states] = await Promise.all([getDevices(), getEntityRegistry(), getStates('sensor')])
 
+  console.log(`[ha] getDevicesWithSensors: devices=${devices.length} entityRegistry=${entityRegistry.length} states=${states.length}`)
+
   const stateMap = new Map(states.map((s) => [s.entity_id, s]))
 
   const sensorEntities = entityRegistry.filter(
     (e) => e.entity_id.startsWith('sensor.') && e.device_id && (e.device_class == null || ALLOWED_SENSOR_CLASSES.has(e.device_class)),
   )
+
+  console.log(`[ha] getDevicesWithSensors: sensorEntities with device_id=${sensorEntities.length}`)
 
   const byDevice = new Map<string, HaDeviceWithSensors>()
   for (const entity of sensorEntities) {
@@ -152,5 +181,7 @@ export async function getDevicesWithSensors(): Promise<HaDeviceWithSensors[]> {
     })
   }
 
-  return [...byDevice.values()].filter((d) => d.sensors.length > 0)
+  const result = [...byDevice.values()].filter((d) => d.sensors.length > 0)
+  console.log(`[ha] getDevicesWithSensors: result devices with sensors=${result.length}`)
+  return result
 }
