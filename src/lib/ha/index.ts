@@ -76,112 +76,82 @@ export async function getState(entityId: string): Promise<HaState | null> {
   }
 }
 
-export interface HaDevice {
-  id: string
-  name: string | null
-  manufacturer: string | null
-  model: string | null
-}
-
-export interface HaEntityRegistryEntry {
-  entity_id: string
-  device_id: string | null
-  device_class: string | null
-  original_name: string | null
+export async function renderTemplate(template: string): Promise<string | null> {
+  const cfg = getConfig()
+  const url = cfg.ha?.url
+  const token = cfg.ha?.token
+  if (!url || !token) return null
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, '')}/api/template`, {
+      method: 'POST',
+      headers: getHeaders(token),
+      body: JSON.stringify({ template }),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error(`[ha] renderTemplate: HTTP ${res.status}`, body.slice(0, 300))
+      return null
+    }
+    return await res.text()
+  } catch (err) {
+    console.error('[ha] renderTemplate error:', err)
+    return null
+  }
 }
 
 const ALLOWED_SENSOR_CLASSES = new Set(['humidity', 'temperature'])
 
-export async function getDevices(): Promise<HaDevice[]> {
-  const cfg = getConfig()
-  const url = cfg.ha?.url
-  const token = cfg.ha?.token
-  if (!url || !token) {
-    console.warn('[ha] getDevices: brak url lub tokena')
-    return []
-  }
-  try {
-    const res = await fetch(`${url.replace(/\/+$/, '')}/api/config/device_registry/list`, {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: JSON.stringify({}),
-    })
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      console.error(`[ha] getDevices: HTTP ${res.status}`, body.slice(0, 200))
-      return []
-    }
-    return (await res.json()) as HaDevice[]
-  } catch (err) {
-    console.error('[ha] getDevices error:', err)
-    return []
-  }
-}
-
-export async function getEntityRegistry(): Promise<HaEntityRegistryEntry[]> {
-  const cfg = getConfig()
-  const url = cfg.ha?.url
-  const token = cfg.ha?.token
-  if (!url || !token) {
-    console.warn('[ha] getEntityRegistry: brak url lub tokena')
-    return []
-  }
-  try {
-    const res = await fetch(`${url.replace(/\/+$/, '')}/api/config/entity_registry/list`, {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: JSON.stringify({}),
-    })
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      console.error(`[ha] getEntityRegistry: HTTP ${res.status}`, body.slice(0, 200))
-      return []
-    }
-    return (await res.json()) as HaEntityRegistryEntry[]
-  } catch (err) {
-    console.error('[ha] getEntityRegistry error:', err)
-    return []
-  }
-}
-
 export interface HaDeviceWithSensors {
-  device: HaDevice
+  device: { id: string; name: string }
   sensors: { entity_id: string; device_class: string | null; state: string; unit: string | null; friendly_name: string | null }[]
 }
 
-export async function getDevicesWithSensors(): Promise<HaDeviceWithSensors[]> {
-  const [devices, entityRegistry, states] = await Promise.all([getDevices(), getEntityRegistry(), getStates('sensor')])
-
-  console.log(`[ha] getDevicesWithSensors: devices=${devices.length} entityRegistry=${entityRegistry.length} states=${states.length}`)
-
-  const stateMap = new Map(states.map((s) => [s.entity_id, s]))
-
-  const sensorEntities = entityRegistry.filter(
-    (e) => e.entity_id.startsWith('sensor.') && e.device_id && (e.device_class == null || ALLOWED_SENSOR_CLASSES.has(e.device_class)),
+function groupSensorEntitiesByDevice(states: HaState[]): HaDeviceWithSensors[] {
+  const sensors = states.filter(
+    (s) =>
+      s.entity_id.startsWith('sensor.') &&
+      (s.attributes.device_class == null || ALLOWED_SENSOR_CLASSES.has(String(s.attributes.device_class))),
   )
 
-  console.log(`[ha] getDevicesWithSensors: sensorEntities with device_id=${sensorEntities.length}`)
+  const byPrefix = new Map<string, HaDeviceWithSensors>()
+  for (const s of sensors) {
+    const entityId = s.entity_id.replace('sensor.', '')
+    const parts = entityId.split('_')
+    const deviceClass = s.attributes.device_class as string | undefined
 
-  const byDevice = new Map<string, HaDeviceWithSensors>()
-  for (const entity of sensorEntities) {
-    const state = stateMap.get(entity.entity_id)
-    if (!state) continue
-    const deviceId = entity.device_id!
-    if (!byDevice.has(deviceId)) {
-      const dev = devices.find((d) => d.id === deviceId)
-      if (!dev) continue
-      byDevice.set(deviceId, { device: dev, sensors: [] })
+    let prefix: string
+    if (deviceClass && parts.length > 1 && parts[parts.length - 1] === deviceClass) {
+      prefix = parts.slice(0, -1).join('_')
+    } else if (parts.length >= 2) {
+      prefix = parts.slice(0, -1).join('_')
+    } else {
+      prefix = entityId
     }
-    byDevice.get(deviceId)!.sensors.push({
-      entity_id: entity.entity_id,
-      device_class: entity.device_class,
-      state: state.state,
-      unit: (state.attributes.unit_of_measurement as string) ?? null,
-      friendly_name: (state.attributes.friendly_name as string) ?? null,
+
+    const key = prefix.toLowerCase()
+    if (!byPrefix.has(key)) {
+      byPrefix.set(key, {
+        device: { id: prefix, name: prefix.replace(/_/g, ' ') },
+        sensors: [],
+      })
+    }
+    byPrefix.get(key)!.sensors.push({
+      entity_id: s.entity_id,
+      device_class: (s.attributes.device_class as string) ?? null,
+      state: s.state,
+      unit: (s.attributes.unit_of_measurement as string) ?? null,
+      friendly_name: (s.attributes.friendly_name as string) ?? null,
     })
   }
 
-  const result = [...byDevice.values()].filter((d) => d.sensors.length > 0)
-  console.log(`[ha] getDevicesWithSensors: result devices with sensors=${result.length}`)
+  return [...byPrefix.values()].filter((d) => d.sensors.length >= 2)
+}
+
+export async function getDevicesWithSensors(): Promise<HaDeviceWithSensors[]> {
+  const states = await getStates('sensor')
+  console.log(`[ha] getDevicesWithSensors: total sensor states=${states.length}`)
+
+  const result = groupSensorEntitiesByDevice(states)
+  console.log(`[ha] getDevicesWithSensors: grouped into ${result.length} devices`)
   return result
 }
