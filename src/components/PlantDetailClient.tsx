@@ -82,8 +82,17 @@ export default function PlantDetailClient({
   const [mappingMode, setMappingMode] = useState<"device" | "entity">("device")
   const [haEntities, setHaEntities] = useState<{ entity_id: string; state: string; friendly_name: string | null }[]>([])
   const [haDevices, setHaDevices] = useState<{ device: { id: string; name: string | null; manufacturer: string | null; model: string | null }; sensors: { entity_id: string; device_class: string | null; state: string; unit: string | null }[] }[]>([])
+  const [deviceFilter, setDeviceFilter] = useState("")
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [topicError, setTopicError] = useState("")
+
+  const filteredHaDevices = haDevices.filter(
+    (d) =>
+      !deviceFilter ||
+      d.device.name?.toLowerCase().includes(deviceFilter.toLowerCase()) ||
+      d.device.manufacturer?.toLowerCase().includes(deviceFilter.toLowerCase()) ||
+      d.device.id.toLowerCase().includes(deviceFilter.toLowerCase()),
+  )
 
   async function logCare(kind: CareType) {
     setBusyCare(kind)
@@ -471,7 +480,17 @@ export default function PlantDetailClient({
               )}
               {mappingMode === "device" && haDevices.length > 0 && (
                 <div className="space-y-1">
-                  {haDevices.map((d) => (
+                  <div className="relative">
+                    <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <input
+                      className="w-full rounded-lg border border-zinc-300 bg-white py-2 pl-9 pr-3 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                      placeholder="Filtruj urządzenia..."
+                      value={deviceFilter}
+                      onChange={(e) => setDeviceFilter(e.target.value)}
+                    />
+                  </div>
+                  {filteredHaDevices.length === 0 && <p className="px-2 py-1 text-xs text-zinc-400">Brak wyników</p>}
+                  {filteredHaDevices.map((d) => (
                     <button key={d.device.id} type="button" onClick={() => addDeviceMappings(d)} className="flex w-full flex-col gap-1 rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{d.device.name ?? d.device.model ?? d.device.id}</span>
