@@ -85,6 +85,7 @@ export default function PlantDetailClient({
   const [deviceFilter, setDeviceFilter] = useState("")
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [topicError, setTopicError] = useState("")
+  const [sensorSuccess, setSensorSuccess] = useState("")
 
   const filteredHaDevices = haDevices.filter(
     (d) =>
@@ -183,27 +184,47 @@ export default function PlantDetailClient({
 
   async function addSensorMapping() {
     if (!topic.trim()) return
-    await fetch("/api/sensors", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plantId: plant.id, topic: topic.trim(), metric }),
-    })
-    setTopic("")
-    router.refresh()
+    try {
+      const res = await fetch("/api/sensors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plantId: plant.id, topic: topic.trim(), metric }),
+      })
+      if (res.ok) {
+        setTopic("")
+        setSensorSuccess("Dodano czujnik")
+        setTimeout(() => setSensorSuccess(""), 3000)
+        router.refresh()
+      }
+    } catch {
+      setTopicError("Błąd połączenia")
+    }
   }
 
-  async function addDeviceMappings(device: { sensors: { entity_id: string; device_class: string | null }[] }) {
+  async function addDeviceMappings(device: { device: { name: string | null }; sensors: { entity_id: string; device_class: string | null }[] }) {
     const metricMap: { [key: string]: string } = { humidity: "moisture", temperature: "temperature" }
     const payload = device.sensors
       .filter((s) => s.device_class && metricMap[s.device_class])
       .map((s) => ({ topic: s.entity_id, metric: metricMap[s.device_class!] }))
     if (payload.length === 0) return
-    await fetch("/api/sensors", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plantId: plant.id, mappings: payload }),
-    })
-    router.refresh()
+    try {
+      const res = await fetch("/api/sensors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plantId: plant.id, mappings: payload }),
+      })
+      if (res.ok) {
+        setTopicError("")
+        setSensorSuccess(`Dodano ${payload.length} czujników`)
+        setTimeout(() => setSensorSuccess(""), 3000)
+        router.refresh()
+      } else {
+        const data = await res.json()
+        setTopicError(data.error ?? "Błąd zapisu")
+      }
+    } catch {
+      setTopicError("Błąd połączenia")
+    }
   }
 
   async function loadTopics() {
@@ -464,6 +485,7 @@ export default function PlantDetailClient({
                 </button>
               )}
               {topicError && <p className="text-xs text-red-600">{topicError}</p>}
+              {sensorSuccess && <p className="text-xs text-emerald-600">{sensorSuccess}</p>}
               <datalist id="sensor-topics">
                 {haEntities.map((e) => <option key={e.entity_id} value={e.entity_id}>{e.friendly_name ?? e.entity_id} ({e.state})</option>)}
               </datalist>
