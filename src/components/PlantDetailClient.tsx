@@ -88,9 +88,11 @@ export default function PlantDetailClient({
   const [noteText, setNoteText] = useState("")
   const [topic, setTopic] = useState("")
   const [metric, setMetric] = useState("moisture")
-  const [mappingMode, setMappingMode] = useState<"device" | "entity">("device")
   const [haEntities, setHaEntities] = useState<{ entity_id: string; state: string; friendly_name: string | null; area: string | null }[]>([])
   const [haDevices, setHaDevices] = useState<{ device: { id: string; name: string | null; manufacturer: string | null; model: string | null; area_name?: string | null }; sensors: { entity_id: string; device_class: string | null; state: string; unit: string | null }[] }[]>([])
+  const [expandedDevice, setExpandedDevice] = useState<string | null>(null)
+  const [expandedSensorMetric, setExpandedSensorMetric] = useState<Record<string, string>>({})
+  const [showManualInput, setShowManualInput] = useState(false)
   const [deviceFilter, setDeviceFilter] = useState("")
   const [areaFilter, setAreaFilter] = useState("")
   const [loadingTopics, setLoadingTopics] = useState(false)
@@ -266,6 +268,24 @@ export default function PlantDetailClient({
     }
   }
 
+  async function addSingleSensorMapping(entityId: string) {
+    const m = expandedSensorMetric[entityId] ?? "moisture"
+    try {
+      const res = await fetch("/api/sensors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plantId: plant.id, topic: entityId, metric: m }),
+      })
+      if (res.ok) {
+        setSensorSuccess("Dodano czujnik")
+        setTimeout(() => setSensorSuccess(""), 3000)
+        router.refresh()
+      }
+    } catch {
+      setTopicError("Błąd połączenia")
+    }
+  }
+
   async function reidentify(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -330,17 +350,15 @@ export default function PlantDetailClient({
     setLoadingTopics(true)
     setTopicError("")
     try {
-      if (mappingMode === "entity") {
-        const res = await fetch("/api/ha/entities?domain=sensor")
-        const data = await res.json()
-        if (!res.ok) { setTopicError(data.error ?? "Nie udało się pobrać encji z HA"); return }
-        setHaEntities(Array.isArray(data) ? data : [])
-      } else {
-        const res = await fetch("/api/ha/devices")
-        const data = await res.json()
-        if (!res.ok) { setTopicError(data.error ?? "Nie udało się pobrać urządzeń z HA"); return }
-        setHaDevices(Array.isArray(data) ? data : [])
-      }
+      const [devRes, entRes] = await Promise.all([
+        fetch("/api/ha/devices"),
+        fetch("/api/ha/entities?domain=sensor"),
+      ])
+      const devData = await devRes.json()
+      const entData = await entRes.json()
+      if (devRes.ok) setHaDevices(Array.isArray(devData) ? devData : [])
+      if (entRes.ok) setHaEntities(Array.isArray(entData) ? entData : [])
+      if (!devRes.ok && !entRes.ok) setTopicError("Nie udało się pobrać danych z HA")
     } catch {
       setTopicError("Błąd połączenia z HA")
     } finally {
@@ -643,46 +661,13 @@ export default function PlantDetailClient({
           </div>
           <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <p className="mb-2 text-xs text-zinc-400">Mapuj czujnik HA do tej rośliny</p>
-            <div className="mb-2 flex gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800">
-              <button type="button" onClick={() => { setMappingMode("device"); setTopic("") }} className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${mappingMode === "device" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
-                Urządzenie
-              </button>
-              <button type="button" onClick={() => { setMappingMode("entity"); setTopic("") }} className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${mappingMode === "entity" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
-                Czujnik
-              </button>
-            </div>
             <div className="flex flex-col gap-2">
-              {mappingMode === "entity" && (
-                <div className="flex gap-2">
-                  <input className={input + " flex-1"} placeholder="sensor.wilgotnosc" value={topic} onChange={(e) => setTopic(e.target.value)} list="sensor-topics" />
-                  <button type="button" onClick={loadTopics} disabled={loadingTopics} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-                    {loadingTopics ? "..." : "Przeglądaj"}
-                  </button>
-                </div>
-              )}
-              {mappingMode === "device" && (
-                <button type="button" onClick={loadTopics} disabled={loadingTopics} className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-                  {loadingTopics ? "Szukam urządzeń..." : "Przeglądaj urządzenia HA"}
-                </button>
-              )}
+              <button type="button" onClick={loadTopics} disabled={loadingTopics} className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                {loadingTopics ? "Szukam urządzeń..." : "Przeglądaj urządzenia HA"}
+              </button>
               {topicError && <p className="text-xs text-red-600">{topicError}</p>}
               {sensorSuccess && <p className="text-xs text-emerald-600">{sensorSuccess}</p>}
-              <datalist id="sensor-topics">
-                {haEntities.map((e) => <option key={e.entity_id} value={e.entity_id}>{e.friendly_name ?? e.entity_id} ({e.state})</option>)}
-              </datalist>
-              {mappingMode === "entity" && (
-                <div className="flex gap-2">
-                  <select className={input} value={metric} onChange={(e) => setMetric(e.target.value)}>
-                    <option value="moisture">Wilgotność gleby</option>
-                    <option value="air_humidity">Wilgotność powietrza</option>
-                    <option value="temperature">Temperatura</option>
-                  </select>
-                  <button onClick={addSensorMapping} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-                    Dodaj
-                  </button>
-                </div>
-              )}
-              {mappingMode === "device" && haDevices.length > 0 && (
+              {haDevices.length > 0 && (
                 <div className="space-y-1">
                   <div className="relative">
                     <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -704,24 +689,89 @@ export default function PlantDetailClient({
                     </div>
                   )}
                   {filteredHaDevices.length === 0 && <p className="px-2 py-1 text-xs text-zinc-400">Brak wyników</p>}
-                  {filteredHaDevices.map((d) => (
-                    <button key={d.device.id} type="button" onClick={() => addDeviceMappings(d)} className="flex w-full flex-col gap-1 rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{d.device.name ?? d.device.model ?? d.device.id}</span>
-                        <span className="text-xs text-zinc-400">{d.sensors.length} czujników</span>
+                  {filteredHaDevices.map((d) => {
+                    const isExpanded = expandedDevice === d.device.id
+                    return (
+                      <div key={d.device.id} className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
+                        <button type="button" onClick={() => setExpandedDevice(isExpanded ? null : d.device.id)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <svg className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                              <span className="font-medium truncate">{d.device.name ?? d.device.model ?? d.device.id}</span>
+                            </div>
+                            <div className="ml-6 flex items-center gap-2">
+                              {d.device.area_name && <span className="text-xs text-zinc-400">{d.device.area_name}</span>}
+                              <span className="text-xs text-zinc-400">{d.sensors.length} czujników</span>
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1 ml-2">
+                            <button type="button" onClick={(e) => { e.stopPropagation(); addDeviceMappings(d) }} title="Mapuj wszystkie czujniki z urządzenia" className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700">
+                              Mapuj wszystkie
+                            </button>
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="border-t border-zinc-100 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
+                            <div className="space-y-1">
+                              {d.sensors.map((s) => {
+                                const sm = expandedSensorMetric[s.entity_id] ?? "moisture"
+                                const entityAlreadyMapped = sensorMappings.some((m) => m.topic === s.entity_id)
+                                return (
+                                  <div key={s.entity_id} className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs ${entityAlreadyMapped ? "bg-emerald-50 dark:bg-emerald-900/20" : "hover:bg-zinc-100 dark:hover:bg-zinc-700"}`}>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-medium truncate">{s.entity_id.split(".").pop()}</span>
+                                        {entityAlreadyMapped && <span className="text-emerald-600 text-[10px]">✓</span>}
+                                      </div>
+                                      <div className="flex items-center gap-1 text-zinc-500">
+                                        <span>{s.state}{s.unit ? ` ${s.unit}` : ""}</span>
+                                        <span className="text-zinc-400">· {s.device_class ?? "brak klasy"}</span>
+                                      </div>
+                                    </div>
+                                    <select value={sm} onChange={(e) => setExpandedSensorMetric((prev) => ({ ...prev, [s.entity_id]: e.target.value }))} className="rounded border border-zinc-300 bg-white px-1.5 py-1 text-[11px] dark:border-zinc-600 dark:bg-zinc-800">
+                                      <option value="moisture">gleba</option>
+                                      <option value="air_humidity">powietrze</option>
+                                      <option value="temperature">temp</option>
+                                    </select>
+                                    <button type="button" onClick={() => addSingleSensorMapping(s.entity_id)} disabled={entityAlreadyMapped} className="shrink-0 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                                      Mapuj
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {d.device.area_name && <span className="text-xs text-zinc-400">{d.device.area_name}</span>}
-                      <div className="flex flex-wrap gap-1">
-                        {d.sensors.map((s) => (
-                          <span key={s.entity_id} className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                            {s.device_class ?? s.entity_id.split(".").pop()} {s.state}{s.unit ? ` ${s.unit}` : ""}
-                          </span>
-                        ))}
-                      </div>
-                    </button>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
+              <div className="mt-1">
+                <button type="button" onClick={() => setShowManualInput(!showManualInput)} className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                  {showManualInput ? "ukryj" : "Wpisz encję ręcznie..."}
+                </button>
+                {showManualInput && (
+                  <div className="mt-2 flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <input className={input + " flex-1"} placeholder="sensor.wilgotnosc" value={topic} onChange={(e) => setTopic(e.target.value)} list="sensor-topics" />
+                    </div>
+                    <datalist id="sensor-topics">
+                      {haEntities.map((e) => <option key={e.entity_id} value={e.entity_id}>{e.friendly_name ?? e.entity_id} ({e.state})</option>)}
+                    </datalist>
+                    <div className="flex gap-2">
+                      <select className={input} value={metric} onChange={(e) => setMetric(e.target.value)}>
+                        <option value="moisture">Wilgotność gleby</option>
+                        <option value="air_humidity">Wilgotność powietrza</option>
+                        <option value="temperature">Temperatura</option>
+                      </select>
+                      <button onClick={addSensorMapping} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                        Dodaj
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             {sensorMappings.length > 0 && (
               <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
