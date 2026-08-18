@@ -1,8 +1,9 @@
 import mqtt, { type MqttClient, type IClientOptions } from 'mqtt'
-import { getConfig, fetchHassMqttConfig, maskSecret } from '@/lib/settings'
+import { getConfig, maskSecret } from '@/lib/settings'
 import { getPlant, getNextCareDates } from '@/lib/services/plants'
-import { getSensorMappings } from '@/lib/services/sensors'
-import { CARE_TYPES } from '@/lib/care-types'
+import { getMqttSensorMappings } from '@/lib/services/sensors'
+import { logCare, normalizeCareKind } from '@/lib/services/care'
+import { CARE_TYPES, CARE_META } from '@/lib/care-types'
 
 const g = globalThis as unknown as { __mqttClient?: MqttClient | null; __mqttListeners?: Array<(connected: boolean) => void>; __mqttSubscribed?: Set<string>; __mqttLastPublish?: Record<string, number> }
 if (!g.__mqttClient) g.__mqttClient = null
@@ -10,13 +11,9 @@ if (!g.__mqttListeners) g.__mqttListeners = []
 if (!g.__mqttSubscribed) g.__mqttSubscribed = new Set()
 if (!g.__mqttLastPublish) g.__mqttLastPublish = {}
 
-let statusListeners: Array<(connected: boolean) => void>
-let subscribed: Set<string>
-let lastPublish: Record<string, number>
-
-statusListeners = g.__mqttListeners!
-subscribed = g.__mqttSubscribed!
-lastPublish = g.__mqttLastPublish!
+let statusListeners: Array<(connected: boolean) => void> = g.__mqttListeners!
+const subscribed: Set<string> = g.__mqttSubscribed!
+const lastPublish: Record<string, number> = g.__mqttLastPublish!
 
 function getClient(): MqttClient | null { return g.__mqttClient ?? null }
 function setClient(c: MqttClient | null) { g.__mqttClient = c }
@@ -46,17 +43,7 @@ function stripPrefix(topic: string): string {
 
 export async function connectMqtt() {
   const cfg = getConfig()
-  let { host, port, user, password } = cfg.mqtt ?? {}
-
-  if (!user && !password && process.env.SUPERVISOR_TOKEN) {
-    const ha = await fetchHassMqttConfig()
-    if (ha) {
-      host = host ?? ha.mqtt_host
-      port = port ?? ha.mqtt_port
-      user = user ?? ha.mqtt_user
-      password = password ?? ha.mqtt_password
-    }
-  }
+  const { host, port, user, password } = cfg.mqtt ?? {}
 
   if (!host) {
     console.warn('[mqtt] brak konfiguracji hosta')
@@ -90,11 +77,25 @@ export async function connectMqtt() {
   })
   getClient()!.on('error', (err) => console.error('[mqtt] error:', err.message))
   getClient()!.on('message', async (topic, payload) => {
-    const { recordReading } = await import('@/lib/services/sensors')
     const text = payload.toString()
+
+    const cmdMatch = topic.match(/^home\/plants\/(\d+)\/cmd$/)
+    if (cmdMatch) {
+      const plantId = Number(cmdMatch[1])
+      const kind = normalizeCareKind(text.trim().toLowerCase())
+      if (kind) {
+        console.log(`[mqtt] cmd: plant=${plantId} kind=${kind}`)
+        await logCare(plantId, kind)
+        await publishCareStatus(plantId)
+        if (kind === 'water') await publishWatered(plantId)
+      }
+      return
+    }
+
+    const { recordReading } = await import('@/lib/services/sensors')
     const value = Number(text)
     if (Number.isNaN(value)) return
-    const mappings = await getSensorMappings()
+    const mappings = await getMqttSensorMappings()
     const match = mappings.find((m) => topic === stripPrefix(m.topic) || topic.includes(stripPrefix(m.topic)))
     if (match) {
       await recordReading(match.plantId, match.metric, value)
@@ -104,8 +105,9 @@ export async function connectMqtt() {
 
 export async function refreshSubscriptions() {
   if (!getClient()?.connected) return
-  const mappings = await getSensorMappings()
+  const mappings = await getMqttSensorMappings()
   const wanted = new Set(mappings.map((m) => stripPrefix(m.topic)))
+  wanted.add('home/plants/+/cmd')
   for (const t of wanted) {
     if (!subscribed.has(t)) {
       getClient()!.subscribe(t, (err) => err && console.error('[mqtt] subscribe err', t, err.message))
@@ -191,6 +193,12 @@ export async function publishDiscovery(plantId: number) {
   if (!plant) return
   const objId = `plant_${plantId}`
   const name = slugify(plant.name) || `plant${plantId}`
+  const device = {
+    identifiers: [`plants_${objId}`],
+    name: plant.name,
+    manufacturer: 'Plantastic',
+    model: 'Roślina',
+  }
   const mk = (component: string, suffix: string, cfg: Record<string, unknown>) =>
     c.publish(`homeassistant/${component}/${objId}_${suffix}/config`, JSON.stringify(cfg), { retain: true })
 
@@ -200,12 +208,14 @@ export async function publishDiscovery(plantId: number) {
     state_topic: `home/plants/${plantId}/last_watered`,
     device_class: 'timestamp',
     value_template: '{{ (value | int) | timestamp_local }}',
+    device,
   })
   mk('sensor', 'moisture', {
     name: `${plant.name} wilgotność`,
     unique_id: `plants_${objId}_moisture`,
     state_topic: `home/plants/${plantId}/moisture`,
     unit_of_measurement: '%',
+    device,
   })
   mk('sensor', 'temperature', {
     name: `${plant.name} temperatura`,
@@ -213,21 +223,24 @@ export async function publishDiscovery(plantId: number) {
     state_topic: `home/plants/${plantId}/temperature`,
     device_class: 'temperature',
     unit_of_measurement: '°C',
+    device,
   })
   mk('sensor', 'light', {
     name: `${plant.name} światło`,
     unique_id: `plants_${objId}_light`,
     state_topic: `home/plants/${plantId}/light`,
     unit_of_measurement: 'lx',
+    device,
   })
   for (const type of CARE_TYPES) {
     mk('binary_sensor', `${type}_due`, {
-      name: `${plant.name} ${type}`,
+      name: `${plant.name} ${CARE_META[type].label}`,
       unique_id: `plants_${objId}_${type}_due`,
       state_topic: `home/plants/${plantId}/${type}_due`,
       payload_on: 'ON',
       payload_off: 'OFF',
       device_class: type === 'water' ? 'problem' : undefined,
+      device,
     })
   }
   void name

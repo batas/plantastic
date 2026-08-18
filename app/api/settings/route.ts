@@ -11,6 +11,10 @@ export async function GET() {
       user: cfg.mqtt?.user ?? '',
       hasPassword: Boolean(cfg.mqtt?.password),
     },
+    ha: {
+      url: cfg.ha?.url ?? '',
+      hasToken: Boolean(cfg.ha?.token),
+    },
     llm: {
       provider: cfg.llm?.provider ?? 'ollama',
       model: cfg.llm?.model ?? '',
@@ -33,6 +37,10 @@ export async function POST(request: Request) {
     if (body.mqtt.port !== undefined) patch.mqtt_port = Number(body.mqtt.port)
     if (body.mqtt.user !== undefined) patch.mqtt_user = String(body.mqtt.user)
     if (body.mqtt.password !== undefined) patch.mqtt_password = String(body.mqtt.password)
+  }
+  if (body.ha) {
+    if (body.ha.url !== undefined) patch.ha_url = String(body.ha.url)
+    if (body.ha.token !== undefined) patch.ha_token = String(body.ha.token)
   }
   if (body.llm) {
     if (body.llm.provider !== undefined) patch.llm_provider = String(body.llm.provider)

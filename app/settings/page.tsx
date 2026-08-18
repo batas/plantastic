@@ -23,6 +23,10 @@ export default async function SettingsPage() {
             user: cfg.mqtt?.user ?? "",
             hasPassword: Boolean(cfg.mqtt?.password),
           },
+          ha: {
+            url: cfg.ha?.url ?? "",
+            hasToken: Boolean(cfg.ha?.token),
+          },
           llm: {
             provider: cfg.llm?.provider ?? "ollama",
             model: cfg.llm?.model ?? "",

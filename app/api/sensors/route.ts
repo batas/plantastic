@@ -18,10 +18,11 @@ export async function POST(request: Request) {
   const plantId = Number(body.plantId)
   const topic = String(body.topic ?? '').trim()
   const metric = String(body.metric ?? 'moisture').trim()
+  const source = String(body.source ?? 'mqtt').trim()
   if (!plantId || !topic) return NextResponse.json({ error: 'plantId i topic są wymagane' }, { status: 400 })
   if (!(await getPlant(plantId))) return NextResponse.json({ error: 'Nie znaleziono rośliny' }, { status: 404 })
-  addSensorMapping(plantId, topic, metric)
-  await refreshSubscriptions()
+  addSensorMapping(plantId, topic, metric, source)
+  if (source === 'mqtt') await refreshSubscriptions()
   return NextResponse.json({ ok: true }, { status: 201 })
 }
 

@@ -10,6 +10,10 @@ export interface AppConfig {
     user?: string
     password?: string
   }
+  ha?: {
+    url?: string
+    token?: string
+  }
   llm?: {
     provider: LlmProvider
     model?: string
@@ -26,7 +30,6 @@ export interface AppConfig {
 function readOptions(): Record<string, unknown> {
   const candidates: string[] = []
   if (process.env.OPTIONS_FILE) candidates.push(process.env.OPTIONS_FILE)
-  candidates.push('/data/options.json')
   candidates.push(`${getDataDir()}/options.json`)
   for (const optionsPath of candidates) {
     if (existsSync(optionsPath)) {
@@ -47,40 +50,6 @@ export function writeOptions(patch: Record<string, unknown>) {
   return opts
 }
 
-interface HassMqttConfig {
-  mqtt_host?: string
-  mqtt_port?: number
-  mqtt_user?: string
-  mqtt_password?: string
-}
-
-export async function fetchHassMqttConfig(): Promise<HassMqttConfig | null> {
-  const token = process.env.SUPERVISOR_TOKEN
-  if (!token) return null
-  try {
-    const res = await fetch('http://supervisor/core/api/config', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) {
-      console.warn('[settings] Supervisor API returned', res.status)
-      return null
-    }
-    const data = await res.json() as Record<string, unknown>
-    const core = data.core_config as Record<string, unknown> | undefined
-    const mqtt = (core?.mqtt ?? core?.MQTT ?? data.mqtt) as Record<string, unknown> | undefined
-    if (!mqtt) return null
-    const host = (mqtt.host as string) ?? (mqtt.broker as string)
-    const port = Number(mqtt.port ?? 1883)
-    const user = (mqtt.user as string) ?? (mqtt.username as string)
-    const password = mqtt.password as string | undefined
-    if (!host) return null
-    return { mqtt_host: host, mqtt_port: port, mqtt_user: user, mqtt_password: password }
-  } catch (err) {
-    console.warn('[settings] Supervisor API fetch failed:', err)
-    return null
-  }
-}
-
 export function getConfig(): AppConfig {
   const opts = readOptions()
   return {
@@ -89,6 +58,10 @@ export function getConfig(): AppConfig {
       port: Number(opts.mqtt_port ?? process.env.MQTT_PORT ?? 1883),
       user: (opts.mqtt_user as string) ?? process.env.MQTT_USER,
       password: (opts.mqtt_password as string) ?? process.env.MQTT_PASSWORD,
+    },
+    ha: {
+      url: (opts.ha_url as string) ?? process.env.HA_URL,
+      token: (opts.ha_token as string) ?? process.env.HA_TOKEN,
     },
     llm: {
       provider: ((opts.llm_provider as string) ?? process.env.LLM_PROVIDER ?? 'ollama') as LlmProvider,

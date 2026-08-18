@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { Anthropic } from '@anthropic-ai/sdk'
 import { getConfig, writeOptions, maskSecret } from '@/lib/settings'
 import { connectMqtt, isConnected } from '@/lib/mqtt'
+import { testConnection as testHa } from '@/lib/ha'
 
 export async function POST(request: Request) {
   const body = await request.json()
@@ -86,6 +87,20 @@ export async function POST(request: Request) {
       })
       const text = res.choices[0]?.message?.content ?? ''
       return NextResponse.json({ ok: true, message: `${provider} OK — ${model}`, details: text.slice(0, 100) })
+    }
+
+    if (type === 'ha') {
+      const haCfg = body.ha as { url?: string; token?: string } | undefined
+      console.log(`[test] ha: url=${haCfg?.url} token=${maskSecret(haCfg?.token)}`)
+      if (haCfg) {
+        const patch: Record<string, unknown> = {}
+        if (haCfg.url !== undefined) patch.ha_url = haCfg.url
+        if (haCfg.token !== undefined) patch.ha_token = haCfg.token
+        writeOptions(patch)
+      }
+      const result = await testHa()
+      if (!result.ok) return NextResponse.json({ ok: false, message: result.message }, { status: 500 })
+      return NextResponse.json({ ok: true, message: result.message })
     }
 
     if (type === 'opb') {

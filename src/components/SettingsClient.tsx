@@ -9,13 +9,22 @@ interface SensorMapping {
   plantName: string | null
   topic: string
   metric: string
+  source: string
 }
 
 interface SettingsData {
   mqtt: { host: string; port: number; user: string; hasPassword: boolean }
+  ha: { url: string; hasToken: boolean }
   llm: { provider: string; model: string; hasApiKey: boolean; baseUrl: string }
   opb: { hasClientId: boolean; hasSecret: boolean }
   connected: boolean
+}
+
+interface HaEntity {
+  entity_id: string
+  state: string
+  unit: string | null
+  friendly_name: string | null
 }
 
 export default function SettingsClient({
@@ -31,17 +40,20 @@ export default function SettingsClient({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [pw, setPw] = useState("")
+  const [haToken, setHaToken] = useState("")
   const [apiKey, setApiKey] = useState("")
   const [opbClientId, setOpbClientId] = useState("")
   const [opbSecret, setOpbSecret] = useState("")
-  const [newMapping, setNewMapping] = useState({ plantId: "", topic: "", metric: "moisture" })
+  const [newMapping, setNewMapping] = useState({ plantId: "", topic: "", metric: "moisture", source: "mqtt" as "mqtt" | "ha" })
   const [testResult, setTestResult] = useState<{ type: string; ok: boolean; message: string; details?: string } | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
-  const [haEntities, setHaEntities] = useState<{ topic: string; value: string }[]>([])
-  const [haLoading, setHaLoading] = useState(false)
-  const [haError, setHaError] = useState<string | null>(null)
-  const [showHaPicker, setShowHaPicker] = useState(false)
-  const [haSearch, setHaSearch] = useState("")
+  const [haEntities, setHaEntities] = useState<HaEntity[]>([])
+  const [mqttTopics, setMqttTopics] = useState<{ topic: string; value: string }[]>([])
+  const [pickerLoading, setPickerLoading] = useState(false)
+  const [pickerError, setPickerError] = useState<string | null>(null)
+  const [showPicker, setShowPicker] = useState(false)
+  const [pickerSearch, setPickerSearch] = useState("")
+  const [pickerMode, setPickerMode] = useState<"mqtt" | "ha">("mqtt")
 
   async function testConnection(type: string) {
     setTesting(type)
@@ -50,6 +62,9 @@ export default function SettingsClient({
       const payload: Record<string, unknown> = { type }
       if (type === "mqtt") {
         payload.mqtt = { host: cfg.mqtt.host, port: cfg.mqtt.port, user: cfg.mqtt.user, password: pw || undefined }
+      }
+      if (type === "ha") {
+        payload.ha = { url: cfg.ha.url, token: haToken || undefined }
       }
       const res = await fetch("/api/settings/test", {
         method: "POST",
@@ -96,6 +111,9 @@ export default function SettingsClient({
           port: cfg.mqtt.port,
           user: cfg.mqtt.user,
         },
+        ha: {
+          url: cfg.ha.url,
+        },
         llm: {
           provider: cfg.llm.provider,
           model: cfg.llm.model,
@@ -104,6 +122,7 @@ export default function SettingsClient({
         opb: {},
       }
       if (pw) body.mqtt = { ...(body.mqtt as object), password: pw }
+      if (haToken) body.ha = { ...(body.ha as object), token: haToken }
       if (apiKey) body.llm = { ...(body.llm as object), apiKey }
       if (opbClientId) body.opb = { ...(body.opb as object), clientId: opbClientId }
       if (opbSecret) body.opb = { ...(body.opb as object), secret: opbSecret }
@@ -113,6 +132,7 @@ export default function SettingsClient({
         body: JSON.stringify(body),
       })
       setPw("")
+      setHaToken("")
       setApiKey("")
       setOpbClientId("")
       setOpbSecret("")
@@ -128,9 +148,9 @@ export default function SettingsClient({
     await fetch("/api/sensors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plantId: Number(newMapping.plantId), topic: newMapping.topic, metric: newMapping.metric }),
+      body: JSON.stringify({ plantId: Number(newMapping.plantId), topic: newMapping.topic, metric: newMapping.metric, source: newMapping.source }),
     })
-    setNewMapping({ plantId: "", topic: "", metric: "moisture" })
+    setNewMapping({ plantId: "", topic: "", metric: "moisture", source: "mqtt" })
     await load()
     router.refresh()
   }
@@ -140,37 +160,60 @@ export default function SettingsClient({
     await load()
   }
 
-  async function fetchHaEntities() {
-    setHaLoading(true)
-    setHaError(null)
+  async function fetchMqttTopics() {
+    setPickerLoading(true)
+    setPickerError(null)
+    setPickerMode("mqtt")
     try {
       const res = await fetch("/api/mqtt/topics")
       if (!res.ok) {
         const data = await res.json()
-        setHaError(data.error ?? `Błąd ${res.status}`)
+        setPickerError(data.error ?? `Błąd ${res.status}`)
         return
       }
-      const entities = await res.json()
-      setHaEntities(entities)
-      setShowHaPicker(true)
+      setMqttTopics(await res.json())
+      setShowPicker(true)
     } catch {
-      setHaError("Nie udało się pobrać topiców z MQTT")
+      setPickerError("Nie udało się pobrać topiców z MQTT")
     } finally {
-      setHaLoading(false)
+      setPickerLoading(false)
     }
   }
 
-  function selectHaEntity(topic: string) {
-    setNewMapping((m) => ({ ...m, topic }))
-    setShowHaPicker(false)
-    setHaSearch("")
+  async function fetchHaEntities() {
+    setPickerLoading(true)
+    setPickerError(null)
+    setPickerMode("ha")
+    try {
+      const res = await fetch("/api/ha/entities")
+      if (!res.ok) {
+        const data = await res.json()
+        setPickerError(data.error ?? `Błąd ${res.status}`)
+        return
+      }
+      setHaEntities(await res.json())
+      setShowPicker(true)
+    } catch {
+      setPickerError("Nie udało się pobrać encji z HA")
+    } finally {
+      setPickerLoading(false)
+    }
   }
 
-  const filteredHaEntities = haEntities.filter(
+  function selectEntity(id: string) {
+    setNewMapping((m) => ({ ...m, topic: id }))
+    setShowPicker(false)
+    setPickerSearch("")
+  }
+
+  const filteredMqtt = mqttTopics.filter(
+    (e) => pickerSearch === "" || e.topic.toLowerCase().includes(pickerSearch.toLowerCase()) || e.value.toLowerCase().includes(pickerSearch.toLowerCase())
+  )
+  const filteredHa = haEntities.filter(
     (e) =>
-      haSearch === "" ||
-      e.topic.toLowerCase().includes(haSearch.toLowerCase()) ||
-      e.value.toLowerCase().includes(haSearch.toLowerCase())
+      pickerSearch === "" ||
+      e.entity_id.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+      (e.friendly_name && e.friendly_name.toLowerCase().includes(pickerSearch.toLowerCase()))
   )
 
   return (
@@ -210,6 +253,31 @@ export default function SettingsClient({
               <input className={input} type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" />
             </div>
           </div>
+        </form>
+      </section>
+
+      <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">Home Assistant</h2>
+          <button type="button" onClick={() => testConnection("ha")} disabled={testing === "ha"} className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+            {testing === "ha" ? "Testowanie..." : "Testuj połączenie"}
+          </button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className={label}>URL (np. http://homeassistant.local:8123)</label>
+            <input className={input} value={cfg.ha.url} onChange={(e) => setCfg((c) => ({ ...c, ha: { ...c.ha, url: e.target.value } }))} placeholder="http://homeassistant.local:8123" />
+          </div>
+          <div>
+            <label className={label}>Long-Lived Access Token {cfg.ha.hasToken && "(zapisany)"}</label>
+            <input className={input} type="password" value={haToken} onChange={(e) => setHaToken(e.target.value)} placeholder="eyJ..." />
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="mb-3 font-semibold">LLM / OpenPlantBook</h2>
+        <div className="space-y-4">
           <div>
             <label className={label}>LLM provider</label>
             <select
@@ -257,23 +325,25 @@ export default function SettingsClient({
               </div>
             </div>
           </div>
-          {testResult && (
-            <div className={`rounded-lg px-3 py-2 text-sm ${testResult.ok ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
-              <span className="font-medium">{testResult.ok ? "OK" : "Błąd"}:</span> {testResult.message}
-              {testResult.details && <span className="ml-1 text-xs opacity-70">({testResult.details})</span>}
-            </div>
-          )}
-          <div className="flex items-center gap-3">
-            <button type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-              {saving ? "Zapisywanie..." : "Zapisz"}
-            </button>
-            {saved && <span className="text-sm text-emerald-600">Zapisano ✓</span>}
-          </div>
-        </form>
+        </div>
       </section>
 
+      {testResult && (
+        <div className={`rounded-lg px-3 py-2 text-sm ${testResult.ok ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
+          <span className="font-medium">{testResult.ok ? "OK" : "Błąd"}:</span> {testResult.message}
+          {testResult.details && <span className="ml-1 text-xs opacity-70">({testResult.details})</span>}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={save} disabled={saving} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+          {saving ? "Zapisywanie..." : "Zapisz"}
+        </button>
+        {saved && <span className="text-sm text-emerald-600">Zapisano</span>}
+      </div>
+
       <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="mb-3 font-semibold">Mapowanie czujników MQTT</h2>
+        <h2 className="mb-3 font-semibold">Mapowanie czujników</h2>
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-40 flex-1">
             <label className={label}>Roślina</label>
@@ -286,12 +356,19 @@ export default function SettingsClient({
               ))}
             </select>
           </div>
+          <div className="min-w-40 flex-1">
+            <label className={label}>Źródło</label>
+            <select className={input} value={newMapping.source} onChange={(e) => setNewMapping((m) => ({ ...m, source: e.target.value as "mqtt" | "ha", topic: "" }))}>
+              <option value="mqtt">MQTT</option>
+              <option value="ha">Home Assistant</option>
+            </select>
+          </div>
           <div className="min-w-56 flex-1">
-            <label className={label}>Topic / Entity ID</label>
+            <label className={label}>{newMapping.source === "ha" ? "Entity ID" : "Topic"}</label>
             <div className="flex gap-2">
-              <input className={input + " flex-1"} placeholder="home/plants/1/moisture lub sensor.nazwa" value={newMapping.topic} onChange={(e) => setNewMapping((m) => ({ ...m, topic: e.target.value }))} />
-              <button type="button" onClick={fetchHaEntities} disabled={haLoading} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-                {haLoading ? "Szukam..." : "Przeglądaj MQTT"}
+              <input className={input + " flex-1"} placeholder={newMapping.source === "ha" ? "sensor.wilgotnosc" : "home/plants/1/moisture"} value={newMapping.topic} onChange={(e) => setNewMapping((m) => ({ ...m, topic: e.target.value }))} />
+              <button type="button" onClick={newMapping.source === "ha" ? fetchHaEntities : fetchMqttTopics} disabled={pickerLoading} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                {pickerLoading ? "Szukam..." : newMapping.source === "ha" ? "Przeglądaj HA" : "Przeglądaj MQTT"}
               </button>
             </div>
           </div>
@@ -308,27 +385,31 @@ export default function SettingsClient({
           </button>
         </div>
 
-        {showHaPicker && (
+        {showPicker && (
           <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-medium">Topici MQTT ({filteredHaEntities.length})</h3>
-              <button type="button" onClick={() => { setShowHaPicker(false); setHaSearch("") }} className="text-xs text-zinc-500 hover:underline">zamknij</button>
+              <h3 className="text-sm font-medium">{pickerMode === "ha" ? "Encje HA" : "Topici MQTT"} ({pickerMode === "ha" ? filteredHa.length : filteredMqtt.length})</h3>
+              <button type="button" onClick={() => { setShowPicker(false); setPickerSearch("") }} className="text-xs text-zinc-500 hover:underline">zamknij</button>
             </div>
-            <input className={input + " mb-2"} placeholder="Szukaj topicu..." value={haSearch} onChange={(e) => setHaSearch(e.target.value)} autoFocus />
-            {haError && <p className="mb-2 text-sm text-red-600">{haError}</p>}
+            <input className={input + " mb-2"} placeholder="Szukaj..." value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} autoFocus />
+            {pickerError && <p className="mb-2 text-sm text-red-600">{pickerError}</p>}
             <div className="max-h-64 space-y-1 overflow-y-auto">
-              {filteredHaEntities.map((e) => (
-                <button
-                  key={e.topic}
-                  type="button"
-                  onClick={() => selectHaEntity(e.topic)}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white dark:hover:bg-zinc-700"
-                >
-                  <span className="flex-1 truncate font-mono text-xs">{e.topic}</span>
-                  {e.value && <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{e.value}</span>}
-                </button>
-              ))}
-              {filteredHaEntities.length === 0 && <p className="text-sm text-zinc-400">Brak wyników.</p>}
+              {pickerMode === "ha"
+                ? filteredHa.map((e) => (
+                    <button key={e.entity_id} type="button" onClick={() => selectEntity(e.entity_id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white dark:hover:bg-zinc-700">
+                      <span className="flex-1 truncate font-mono text-xs">{e.entity_id}</span>
+                      <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{e.state}{e.unit ? ` ${e.unit}` : ""}</span>
+                      {e.friendly_name && <span className="shrink-0 text-xs text-zinc-400">{e.friendly_name}</span>}
+                    </button>
+                  ))
+                : filteredMqtt.map((e) => (
+                    <button key={e.topic} type="button" onClick={() => selectEntity(e.topic)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white dark:hover:bg-zinc-700">
+                      <span className="flex-1 truncate font-mono text-xs">{e.topic}</span>
+                      {e.value && <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{e.value}</span>}
+                    </button>
+                  ))
+              }
+              {((pickerMode === "ha" && filteredHa.length === 0) || (pickerMode === "mqtt" && filteredMqtt.length === 0)) && <p className="text-sm text-zinc-400">Brak wyników.</p>}
             </div>
           </div>
         )}
@@ -336,8 +417,15 @@ export default function SettingsClient({
         <ul className="mt-3 space-y-1">
           {mappings.map((m) => (
             <li key={m.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800">
-              <span>
-                <strong>{m.plantName ?? `#${m.plantId}`}</strong> · {m.metric} · <code className="text-zinc-500">{m.topic}</code>
+              <span className="flex items-center gap-2">
+                <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${m.source === "ha" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"}`}>
+                  {m.source === "ha" ? "HA" : "MQTT"}
+                </span>
+                <strong>{m.plantName ?? `#${m.plantId}`}</strong>
+                <span className="text-zinc-400">·</span>
+                {m.metric}
+                <span className="text-zinc-400">·</span>
+                <code className="text-zinc-500">{m.topic}</code>
               </span>
               <button onClick={() => delMapping(m.id)} className="text-xs text-red-500 hover:underline">
                 usuń

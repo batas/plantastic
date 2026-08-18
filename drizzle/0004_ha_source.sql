@@ -1,0 +1,1 @@
+ALTER TABLE `sensor_mappings` ADD COLUMN `source` text NOT NULL DEFAULT 'mqtt';
