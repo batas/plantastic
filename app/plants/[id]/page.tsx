@@ -2,6 +2,7 @@ import Link from "next/link"
 import PlantDetailClient from "@/components/PlantDetailClient"
 import { getPlantDetail, getNextCareDates, getPlant } from "@/lib/services/plants"
 import { getSensorMappings } from "@/lib/services/sensors"
+import { getStates } from "@/lib/ha"
 import { getOpbInfo, translateOpbGuide, type OpbPlant } from "@/lib/opb"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
@@ -40,12 +41,17 @@ export default async function PlantPage(props: PageProps<"/plants/[id]">) {
     getSensorMappings(),
   ])
   const plantMappings = allMappings.filter((m) => m.plantId === plantId)
+  let entityNames: Record<string, string> = {}
+  try {
+    const states = await getStates()
+    for (const s of states) entityNames[s.entity_id] = (s.attributes.friendly_name as string) ?? s.entity_id
+  } catch {}
   return (
     <div>
       <Link href="/" className="text-sm text-zinc-500 hover:underline">
         ← Wróć
       </Link>
-      <PlantDetailClient detail={detail} careStatus={careStatus ?? []} opbGuide={opb} sensorMappings={plantMappings} />
+      <PlantDetailClient detail={detail} careStatus={careStatus ?? []} opbGuide={opb} sensorMappings={plantMappings} entityNames={entityNames} />
     </div>
   )
 }

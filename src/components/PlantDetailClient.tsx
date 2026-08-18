@@ -61,11 +61,13 @@ export default function PlantDetailClient({
   careStatus,
   opbGuide,
   sensorMappings,
+  entityNames,
 }: {
   detail: Detail
   careStatus: CareStatus[]
   opbGuide: OpbGuide | null
   sensorMappings: { id: number; plantId: number; topic: string; metric: string; source: string }[]
+  entityNames: Record<string, string>
 }) {
   const router = useRouter()
   const { plant } = detail
@@ -559,7 +561,8 @@ export default function PlantDetailClient({
                     <div key={m.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-1.5 text-xs dark:bg-zinc-800/50">
                       <div className="min-w-0 flex-1">
                         <span className="font-medium">{m.metric}</span>
-                        <span className="ml-2 truncate text-zinc-400">{m.topic}</span>
+                        <span className="ml-2 text-zinc-500">{entityNames[m.topic] ?? m.topic}</span>
+                        {entityNames[m.topic] && <span className="ml-1 truncate text-zinc-400">{m.topic}</span>}
                         <span className="ml-1 rounded bg-zinc-200 px-1 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-700">{m.source}</span>
                       </div>
                       <button type="button" onClick={async () => { await fetch(`/api/sensors?id=${m.id}`, { method: "DELETE" }); router.refresh() }} className="ml-2 shrink-0 text-zinc-400 hover:text-red-500">
