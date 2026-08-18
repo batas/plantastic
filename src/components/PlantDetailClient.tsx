@@ -93,6 +93,9 @@ export default function PlantDetailClient({
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [topicError, setTopicError] = useState("")
   const [sensorSuccess, setSensorSuccess] = useState("")
+  const [reidentifying, setReidentifying] = useState(false)
+  const [reidentifyError, setReidentifyError] = useState("")
+  const [reidentifyResult, setReidentifyResult] = useState<{ identification: { scientificName: string | null; commonName: string | null; confidence: number | null }; opb: { pid: string; display_pid: string; scientific_name?: string; common_name?: string; alias?: string | null }[] } | null>(null)
 
   const filteredHaDevices = haDevices.filter(
     (d) => {
@@ -215,6 +218,46 @@ export default function PlantDetailClient({
     }
   }
 
+  async function reidentify(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setReidentifying(true)
+    setReidentifyError("")
+    setReidentifyResult(null)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch("/api/identify", { method: "POST", body: form })
+      const data = await res.json()
+      if (!res.ok) {
+        setReidentifyError(data.error ?? "Błąd identyfikacji")
+        return
+      }
+      setReidentifyResult(data)
+    } catch {
+      setReidentifyError("Błąd połączenia")
+    } finally {
+      setReidentifying(false)
+      e.target.value = ""
+    }
+  }
+
+  async function applyReidentification(commonName: string | null, scientificName: string | null, opbId?: string) {
+    const payload: Record<string, unknown> = {}
+    if (commonName) payload.species = commonName
+    if (scientificName) payload.scientificName = scientificName
+    if (opbId) payload.opbId = opbId
+    const res = await fetch(`/api/plants/${plant.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) {
+      setReidentifyResult(null)
+      router.refresh()
+    }
+  }
+
   async function addDeviceMappings(device: { device: { id: string; name: string | null }; sensors: { entity_id: string; device_class: string | null }[] }) {
     try {
       const res = await fetch("/api/device-mappings", {
@@ -318,6 +361,40 @@ export default function PlantDetailClient({
             </button>
           </div>
           {planError && <p className="mt-2 text-sm text-red-600">{planError}</p>}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700">
+              {reidentifying ? "🔍 Rozpoznawanie..." : "🔍 Rozpoznaj na nowo"}
+              <input type="file" accept="image/*" className="hidden" onChange={reidentify} disabled={reidentifying} />
+            </label>
+            {reidentifyError && <p className="text-sm text-red-600">{reidentifyError}</p>}
+          </div>
+          {reidentifyResult && (
+            <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+              <p className="text-sm font-medium">Wynik rozpoznawania:</p>
+              <p className="mt-1 text-sm">
+                {reidentifyResult.identification.commonName ?? reidentifyResult.identification.scientificName ?? "Nie rozpoznano"}
+                {reidentifyResult.identification.scientificName && <span className="italic text-zinc-500"> ({reidentifyResult.identification.scientificName})</span>}
+                {reidentifyResult.identification.confidence != null && (
+                  <span className="ml-2 text-xs text-zinc-400">(pewność {Math.round(reidentifyResult.identification.confidence * 100)}%)</span>
+                )}
+              </p>
+              {reidentifyResult.opb.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {reidentifyResult.opb.map((r) => (
+                    <button key={r.pid} onClick={() => applyReidentification(r.common_name ?? r.alias ?? null, r.scientific_name ?? r.display_pid, r.pid)} className="block w-full rounded border border-zinc-200 bg-white px-2 py-1 text-left text-xs hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-700">
+                      {r.common_name ?? r.alias ?? r.display_pid} <span className="italic text-zinc-400">{r.scientific_name ?? r.display_pid}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!reidentifyResult.opb.length && reidentifyResult.identification.scientificName && (
+                <button onClick={() => applyReidentification(reidentifyResult.identification.commonName, reidentifyResult.identification.scientificName)} className="mt-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">
+                  Zastosuj
+                </button>
+              )}
+              <button onClick={() => setReidentifyResult(null)} className="mt-2 ml-2 text-xs text-zinc-400 hover:text-zinc-600">Anuluj</button>
+            </div>
+          )}
         </section>
 
         <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
