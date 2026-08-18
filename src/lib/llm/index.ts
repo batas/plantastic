@@ -34,6 +34,8 @@ function buildSystemPrompt(): string {
     'Uwzględnij: aktualny stan rośliny, trendy odczytów (czy wilgotność spada, temperatura jest stabilna itp.),',
     'symptomy problemów, zalecenia dot. podlewania i nawożenia,',
     'warunki środowiskowe (światło, temperatura, wilgotność) i jak się mają do wymagań gatunku.',
+    'Analizuj zdjęcia pod kątem: plam na liściach, etiolacji (wyciągania do światła), szkodników, ubytków turgoru,',
+    'koloru liści (bladość, żółknięcie, brązowienie), stanu podłoża, widocznych korzeni.',
     'ODPOWIEDZ W FORMACIE MARKDOWN. Używaj nagłówków (##, ###), list (* i 1.), pogrubień (**tekst**).',
     'Sekcje: "## Stan rośliny", "## Co zrobić teraz", "## Obserwować pod kątem".',
   ].join(' ')
@@ -89,14 +91,26 @@ function buildOpbSection(opb: OpbPlant | null): string {
 function buildUserPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlantDetail>>, opb: OpbPlant | null, photoCount: number): string {
   const lastWater = detail?.careLogs.find((c) => c.kind === 'water')
   const lastFert = detail?.careLogs.find((c) => c.kind === 'fertilize')
+  const lastRepotted = plant.lastRepottedAt ? Math.round((Date.now() / 1000 - plant.lastRepottedAt) / 86400) : null
+  const potMaterialLabels: Record<string, string> = { terracotta: 'terakota', plastic: 'plastik', ceramic: 'ceramika', fabric: 'tkanina/mesh', other: 'inny' }
+  const waterLabels: Record<string, string> = { tap: 'kranówka', filtered: 'przefiltrowana', distilled: 'destylowana', rain: 'deszczówka' }
   const lines = [
     `Roślina: ${plant.name}`,
     `Gatunek: ${plant.species ?? 'nieznany'}${plant.scientificName ? ` (${plant.scientificName})` : ''}`,
+    plant.location ? `Lokalizacja: ${plant.location}` : null,
     plant.notes ? `Notatki: ${plant.notes}` : null,
     `Interwał podlewania: ${plant.waterIntervalDays ?? 'brak'} dni`,
     `Interwał nawożenia: ${plant.fertilizeIntervalDays ?? 'brak'} dni`,
     `Ostatnie podlewanie: ${lastWater ? new Date(lastWater.createdAt * 1000).toLocaleString('pl-PL') : 'brak'}`,
     `Ostatnie nawożenie: ${lastFert ? new Date(lastFert.createdAt * 1000).toLocaleString('pl-PL') : 'brak'}`,
+    '',
+    '[Fizyczne wymiary]',
+    plant.potDiameterCm ? `Średnica doniczki: ${plant.potDiameterCm} cm` : null,
+    plant.plantHeightCm ? `Wysokość rośliny: ${plant.plantHeightCm} cm` : null,
+    plant.potMaterial ? `Materiał doniczki: ${potMaterialLabels[plant.potMaterial] ?? plant.potMaterial}` : null,
+    plant.substrateType ? `Podłoże: ${plant.substrateType}` : null,
+    lastRepotted != null ? `Ostatnie przesadzanie: ${lastRepotted} dni temu${lastRepotted < 42 ? ' (świeżo przesadzona — nie nawozić przez 4-6 tygodni)' : ''}` : null,
+    plant.waterType ? `Rodzaj wody: ${waterLabels[plant.waterType] ?? plant.waterType}` : null,
     '',
     buildSensorHistory(detail?.latestReadings ?? {}),
     '',

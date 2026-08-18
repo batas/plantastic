@@ -42,6 +42,12 @@ export default function PlantForm({
     mistIntervalDays: plant?.mistIntervalDays != null ? String(plant.mistIntervalDays) : "",
     cleanIntervalDays: plant?.cleanIntervalDays != null ? String(plant.cleanIntervalDays) : "",
     rotateIntervalDays: plant?.rotateIntervalDays != null ? String(plant.rotateIntervalDays) : "",
+    potDiameterCm: plant?.potDiameterCm != null ? String(plant.potDiameterCm) : "",
+    plantHeightCm: plant?.plantHeightCm != null ? String(plant.plantHeightCm) : "",
+    potMaterial: plant?.potMaterial ?? "",
+    substrateType: plant?.substrateType ?? "",
+    lastRepottedAt: plant?.lastRepottedAt ? new Date(plant.lastRepottedAt * 1000).toISOString().slice(0, 10) : "",
+    waterType: plant?.waterType ?? "",
   })
   const [opbQuery, setOpbQuery] = useState("")
   const [opbResults, setOpbResults] = useState<OpbResult[]>([])
@@ -106,6 +112,12 @@ export default function PlantForm({
         mistIntervalDays: form.mistIntervalDays ? Number(form.mistIntervalDays) : null,
         cleanIntervalDays: form.cleanIntervalDays ? Number(form.cleanIntervalDays) : null,
         rotateIntervalDays: form.rotateIntervalDays ? Number(form.rotateIntervalDays) : null,
+        potDiameterCm: form.potDiameterCm ? Number(form.potDiameterCm) : null,
+        plantHeightCm: form.plantHeightCm ? Number(form.plantHeightCm) : null,
+        potMaterial: form.potMaterial || null,
+        substrateType: form.substrateType || null,
+        lastRepottedAt: form.lastRepottedAt ? Math.floor(new Date(form.lastRepottedAt).getTime() / 1000) : null,
+        waterType: form.waterType || null,
       }
       const res = await fetch(plant ? `/api/plants/${plant.id}` : "/api/plants", {
         method: plant ? "PUT" : "POST",
@@ -241,6 +253,48 @@ export default function PlantForm({
         <div>
           <label className={label}>Obracanie (dni)</label>
           <input className={input} type="number" min={0} value={form.rotateIntervalDays} onChange={(e) => set("rotateIntervalDays", e.target.value)} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div>
+          <label className={label}>Średnica doniczki (cm)</label>
+          <input className={input} type="number" min={0} value={form.potDiameterCm} onChange={(e) => set("potDiameterCm", e.target.value)} placeholder="np. 17" />
+        </div>
+        <div>
+          <label className={label}>Wysokość rośliny (cm)</label>
+          <input className={input} type="number" min={0} value={form.plantHeightCm} onChange={(e) => set("plantHeightCm", e.target.value)} placeholder="np. 45" />
+        </div>
+        <div>
+          <label className={label}>Materiał doniczki</label>
+          <select className={input} value={form.potMaterial} onChange={(e) => set("potMaterial", e.target.value)}>
+            <option value="">—</option>
+            <option value="terracotta">Terakota</option>
+            <option value="plastic">Plastik</option>
+            <option value="ceramic">Ceramika</option>
+            <option value="fabric">Tkanina / mesh</option>
+            <option value="other">Inny</option>
+          </select>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div>
+          <label className={label}>Typ podłoża</label>
+          <input className={input} value={form.substrateType} onChange={(e) => set("substrateType", e.target.value)} placeholder="np. ziemia uniwersalna, mix aroidów" />
+        </div>
+        <div>
+          <label className={label}>Ostatnie przesadzanie</label>
+          <input className={input} type="date" value={form.lastRepottedAt} onChange={(e) => set("lastRepottedAt", e.target.value)} />
+        </div>
+        <div>
+          <label className={label}>Rodzaj wody</label>
+          <select className={input} value={form.waterType} onChange={(e) => set("waterType", e.target.value)}>
+            <option value="">—</option>
+            <option value="tap">Kranówka</option>
+            <option value="filtered">Przefiltrowana</option>
+            <option value="distilled">Destylowana</option>
+            <option value="rain">Deszczówka</option>
+          </select>
         </div>
       </div>
 

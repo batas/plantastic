@@ -17,6 +17,12 @@ export const plants = sqliteTable(
     mistIntervalDays: integer('mist_interval_days'),
     cleanIntervalDays: integer('clean_interval_days'),
     rotateIntervalDays: integer('rotate_interval_days'),
+    potDiameterCm: integer('pot_diameter_cm'),
+    plantHeightCm: integer('plant_height_cm'),
+    potMaterial: text('pot_material'), // terracotta | plastic | ceramic | fabric | other
+    substrateType: text('substrate_type'),
+    lastRepottedAt: integer('last_repotted_at'),
+    waterType: text('water_type'), // tap | filtered | distilled | rain
     createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
     updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
   },
