@@ -1,6 +1,6 @@
 import { and, eq, lt } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { sensorMappings, sensorReadings } from '@/lib/db/schema'
+import { sensorMappings, sensorReadings, deviceMappings } from '@/lib/db/schema'
 import { publishSensorValue } from '@/lib/mqtt'
 
 export async function getSensorMappings() {
@@ -30,4 +30,22 @@ export async function recordReading(plantId: number, metric: string, value: numb
   const cutoff = Math.floor(Date.now() / 1000) - 30 * 86400
   db.delete(sensorReadings).where(and(eq(sensorReadings.plantId, plantId), eq(sensorReadings.metric, metric), lt(sensorReadings.measuredAt, cutoff))).run()
   publishSensorValue(plantId, metric, value)
+}
+
+export function getDeviceMappings(plantId: number) {
+  return db.select().from(deviceMappings).where(eq(deviceMappings.plantId, plantId)).all()
+}
+
+export function getAllDeviceMappings() {
+  return db.select().from(deviceMappings).all()
+}
+
+export function addDeviceMapping(plantId: number, haDeviceId: string, deviceName: string | null) {
+  const existing = db.select().from(deviceMappings).where(and(eq(deviceMappings.plantId, plantId), eq(deviceMappings.haDeviceId, haDeviceId))).get()
+  if (existing) return existing
+  return db.insert(deviceMappings).values({ plantId, haDeviceId, deviceName }).returning().get()
+}
+
+export function deleteDeviceMapping(id: number) {
+  db.delete(deviceMappings).where(eq(deviceMappings.id, id)).run()
 }

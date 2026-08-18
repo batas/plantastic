@@ -102,6 +102,20 @@ export const sensorReadings = sqliteTable(
   (t) => [index('readings_plant_metric_idx').on(t.plantId, t.metric)],
 )
 
+export const deviceMappings = sqliteTable(
+  'device_mappings',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    plantId: integer('plant_id')
+      .notNull()
+      .references(() => plants.id, { onDelete: 'cascade' }),
+    haDeviceId: text('ha_device_id').notNull(),
+    deviceName: text('device_name'),
+    createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [index('device_mappings_plant_idx').on(t.plantId)],
+)
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
@@ -113,3 +127,4 @@ export type TimelineEntry = typeof timelineEntries.$inferSelect
 export type CareLog = typeof careLogs.$inferSelect
 export type SensorMapping = typeof sensorMappings.$inferSelect
 export type SensorReading = typeof sensorReadings.$inferSelect
+export type DeviceMapping = typeof deviceMappings.$inferSelect
