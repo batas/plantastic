@@ -43,9 +43,13 @@ export async function getStates(domain?: string): Promise<HaState[]> {
     return []
   }
   try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000)
     const res = await fetch(`${url.replace(/\/+$/, '')}/api/states`, {
       headers: getHeaders(token),
+      signal: controller.signal,
     })
+    clearTimeout(timeout)
     if (!res.ok) {
       const body = await res.text().catch(() => '')
       console.error(`[ha] getStates: HTTP ${res.status}`, body.slice(0, 200))
