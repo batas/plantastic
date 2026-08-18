@@ -75,8 +75,11 @@ export default function PlantDetailClient({
   const { plant } = detail
   const [now] = useState(() => Date.now() / 1000)
   const [busyCare, setBusyCare] = useState<string | null>(null)
-  const [planning, setPlanning] = useState(false)
-  const [checking, setChecking] = useState(false)
+  const [activeTask, setActiveTask] = useState<{ id: number; type: string; steps: string[] } | null>(null)
+  const [taskStatus, setTaskStatus] = useState<{ status: string; progress: number; error: string | null; resultJson: string | null } | null>(null)
+  const [taskElapsed, setTaskElapsed] = useState(0)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [planError, setPlanError] = useState("")
   const [uploading, setUploading] = useState(false)
   const [photoError, setPhotoError] = useState("")
@@ -96,34 +99,55 @@ export default function PlantDetailClient({
   const [reidentifying, setReidentifying] = useState(false)
   const [reidentifyError, setReidentifyError] = useState("")
   const [reidentifyResult, setReidentifyResult] = useState<{ identification: { scientificName: string | null; commonName: string | null; confidence: number | null }; opb: { pid: string; display_pid: string; scientific_name?: string; common_name?: string; alias?: string | null }[] } | null>(null)
-  const [progressSteps, setProgressSteps] = useState<{ label: string; done: boolean }[]>([])
-  const [progressElapsed, setProgressElapsed] = useState(0)
-  const [progressLabel, setProgressLabel] = useState("")
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const isBusy = planning || checking
+  const isBusy = activeTask !== null
 
   useEffect(() => {
-    if (isBusy) {
-      setProgressElapsed(0)
-      timerRef.current = setInterval(() => setProgressElapsed((p) => p + 1), 1000)
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
-      timerRef.current = null
-      setProgressSteps([])
-      setProgressLabel("")
+    if (!activeTask) {
+      if (pollRef.current) clearInterval(pollRef.current)
+      if (elapsedRef.current) clearInterval(elapsedRef.current)
+      pollRef.current = null
+      elapsedRef.current = null
+      return
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [isBusy])
 
-  function startProgress(label: string, steps: string[]) {
-    setProgressLabel(label)
-    setProgressSteps(steps.map((s) => ({ label: s, done: false })))
-  }
+    setTaskElapsed(0)
+    elapsedRef.current = setInterval(() => setTaskElapsed((p) => p + 1), 1000)
 
-  function advanceProgress(index: number) {
-    setProgressSteps((prev) => prev.map((s, i) => i <= index ? { ...s, done: true } : s))
-  }
+    const taskId = activeTask.id
+    let interval = 1000
+    const maxInterval = 3000
+
+    function poll() {
+      fetch(`/api/tasks/${taskId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          setTaskStatus(data)
+          if (data.status === 'done' || data.status === 'failed') {
+            if (pollRef.current) clearInterval(pollRef.current)
+            if (elapsedRef.current) clearInterval(elapsedRef.current)
+            pollRef.current = null
+            elapsedRef.current = null
+            if (data.status === 'done') router.refresh()
+          } else {
+            interval = Math.min(interval + 200, maxInterval)
+            pollRef.current = setTimeout(() => poll(), interval) as unknown as ReturnType<typeof setInterval>
+          }
+        })
+        .catch(() => {
+          pollRef.current = setTimeout(() => poll(), interval) as unknown as ReturnType<typeof setInterval>
+        })
+    }
+
+    poll()
+
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current as unknown as number)
+      if (elapsedRef.current) clearInterval(elapsedRef.current)
+      pollRef.current = null
+      elapsedRef.current = null
+    }
+  }, [activeTask, router])
 
   const filteredHaDevices = haDevices.filter(
     (d) => {
@@ -155,66 +179,34 @@ export default function PlantDetailClient({
   }
 
   async function generatePlan() {
-    setPlanning(true)
     setPlanError("")
-    startProgress("Generowanie planu pielęgnacji", [
-      "Zbieranie danych rośliny...",
-      "Pobieranie historii odczytów sensorów...",
-      "Analiza przez AI...",
-      "Zapisywanie planu...",
-    ])
-    advanceProgress(0)
     try {
-      await new Promise((r) => setTimeout(r, 400))
-      advanceProgress(1)
-      await new Promise((r) => setTimeout(r, 1500))
-      advanceProgress(2)
       const res = await fetch(`/api/plants/${plant.id}/care-plan`, { method: "POST" })
-      advanceProgress(2)
       const data = await res.json()
       if (!res.ok) {
         setPlanError(data.error ?? "Błąd generowania planu")
         return
       }
-      advanceProgress(3)
-      await new Promise((r) => setTimeout(r, 300))
-      router.refresh()
+      setActiveTask({ id: data.taskId, type: "care_plan", steps: data.steps })
+      setTaskStatus({ status: "pending", progress: 0, error: null, resultJson: null })
     } catch {
       setPlanError("Błąd połączenia")
-    } finally {
-      setPlanning(false)
     }
   }
 
   async function checkHealth() {
-    setChecking(true)
     setPlanError("")
-    startProgress("Przegląd stanu rośliny (Plant Doctor)", [
-      "Ładowanie zdjęć i danych...",
-      "Analiza wizualna przez AI...",
-      "Ocena stanu zdrowia...",
-      "Zapisywanie wyników...",
-    ])
-    advanceProgress(0)
     try {
-      await new Promise((r) => setTimeout(r, 400))
-      advanceProgress(1)
-      await new Promise((r) => setTimeout(r, 1500))
-      advanceProgress(2)
       const res = await fetch(`/api/plants/${plant.id}/health`, { method: "POST" })
-      advanceProgress(2)
       const data = await res.json()
       if (!res.ok) {
         setPlanError(data.error ?? "Błąd przeglądu stanu")
         return
       }
-      advanceProgress(3)
-      await new Promise((r) => setTimeout(r, 300))
-      router.refresh()
+      setActiveTask({ id: data.taskId, type: "health", steps: data.steps })
+      setTaskStatus({ status: "pending", progress: 0, error: null, resultJson: null })
     } catch {
       setPlanError("Błąd połączenia")
-    } finally {
-      setChecking(false)
     }
   }
 
@@ -409,47 +401,59 @@ export default function PlantDetailClient({
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={generatePlan} disabled={planning} className={`${btn} bg-violet-600 hover:bg-violet-700`}>
-              {planning ? "Generowanie..." : "🤖 Generuj plan pielęgnacji"}
+            <button onClick={generatePlan} disabled={isBusy} className={`${btn} bg-violet-600 hover:bg-violet-700`}>
+              {activeTask?.type === "care_plan" ? "Generowanie..." : "🤖 Generuj plan pielęgnacji"}
             </button>
-            <button onClick={checkHealth} disabled={checking} className={`${btn} bg-rose-600 hover:bg-rose-700`}>
-              {checking ? "Analiza..." : "🩺 Przegląd stanu (Plant Doctor)"}
+            <button onClick={checkHealth} disabled={isBusy} className={`${btn} bg-rose-600 hover:bg-rose-700`}>
+              {activeTask?.type === "health" ? "Analiza..." : "🩺 Przegląd stanu (Plant Doctor)"}
             </button>
           </div>
           {planError && <p className="mt-2 text-sm text-red-600">{planError}</p>}
-          {isBusy && progressSteps.length > 0 && (
+          {isBusy && activeTask && (
             <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{progressLabel}</p>
-                <span className="text-xs text-zinc-400 tabular-nums">{progressElapsed}s</span>
+                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                  {activeTask.type === "care_plan" ? "Generowanie planu pielęgnacji" : "Przegląd stanu rośliny"}
+                </p>
+                <span className="text-xs text-zinc-400 tabular-nums">{taskElapsed}s</span>
               </div>
               <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                 <div
                   className="h-full rounded-full bg-violet-500 transition-all duration-500 ease-out"
-                  style={{ width: `${Math.min((progressSteps.filter((s) => s.done).length / progressSteps.length) * 100, 95)}%` }}
+                  style={{ width: `${Math.min(taskStatus?.progress ?? 0, 95)}%` }}
                 />
               </div>
               <div className="space-y-1.5">
-                {progressSteps.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    {s.done ? (
-                      <svg className="h-3.5 w-3.5 shrink-0 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : i === progressSteps.findIndex((p) => !p.done) ? (
-                      <svg className="h-3.5 w-3.5 shrink-0 animate-spin text-violet-500" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    ) : (
-                      <span className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span className={s.done ? "text-zinc-500 dark:text-zinc-400" : i === progressSteps.findIndex((p) => !p.done) ? "text-zinc-700 font-medium dark:text-zinc-200" : "text-zinc-400 dark:text-zinc-500"}>
-                      {s.label}
-                    </span>
-                  </div>
-                ))}
+                {activeTask.steps.map((step, i) => {
+                  const stepPercent = (i / activeTask.steps.length) * 100
+                  const nextStepPercent = ((i + 1) / activeTask.steps.length) * 100
+                  const progress = taskStatus?.progress ?? 0
+                  const done = progress >= nextStepPercent
+                  const current = !done && progress >= stepPercent
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      {done ? (
+                        <svg className="h-3.5 w-3.5 shrink-0 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : current ? (
+                        <svg className="h-3.5 w-3.5 shrink-0 animate-spin text-violet-500" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : (
+                        <span className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className={done ? "text-zinc-500 dark:text-zinc-400" : current ? "text-zinc-700 font-medium dark:text-zinc-200" : "text-zinc-400 dark:text-zinc-500"}>
+                        {step}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
+              {taskStatus?.error && (
+                <p className="mt-2 text-xs text-red-600">{taskStatus.error}</p>
+              )}
             </div>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2">

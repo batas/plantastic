@@ -141,9 +141,11 @@ async function withOpenAi(plantId: number, photoCount: number, opb: OpbPlant | n
       { role: 'system', content: buildSystemPrompt() },
       { role: 'user', content },
     ],
-    max_tokens: 1500,
+    max_tokens: 4096,
   })
-  return { provider: 'openai', model, plan: res.choices[0]?.message?.content ?? '', generatedAt: Date.now() }
+  const plan = res.choices[0]?.message?.content ?? ''
+  const truncated = res.choices[0]?.finish_reason === 'length'
+  return { provider: 'openai', model, plan: truncated ? plan + '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.' : plan, generatedAt: Date.now() }
 }
 
 async function withAnthropic(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
@@ -162,7 +164,7 @@ async function withAnthropic(plantId: number, photoCount: number, opb: OpbPlant 
   }
   const res = await client.messages.create({
     model,
-    max_tokens: 1500,
+    max_tokens: 4096,
     system: buildSystemPrompt(),
     messages: [{ role: 'user', content }],
   })
@@ -170,7 +172,8 @@ async function withAnthropic(plantId: number, photoCount: number, opb: OpbPlant 
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('\n')
-  return { provider: 'anthropic', model, plan: text, generatedAt: Date.now() }
+  const truncated = res.stop_reason === 'max_tokens'
+  return { provider: 'anthropic', model, plan: truncated ? text + '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.' : text, generatedAt: Date.now() }
 }
 
 async function withOllama(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
@@ -194,8 +197,11 @@ async function withOllama(plantId: number, photoCount: number, opb: OpbPlant | n
       { role: 'system', content: buildSystemPrompt() },
       { role: 'user', content },
     ],
+    max_tokens: 4096,
   })
-  return { provider: 'ollama', model, plan: res.choices[0]?.message?.content ?? '', generatedAt: Date.now() }
+  const plan = res.choices[0]?.message?.content ?? ''
+  const truncated = res.choices[0]?.finish_reason === 'length'
+  return { provider: 'ollama', model, plan: truncated ? plan + '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.' : plan, generatedAt: Date.now() }
 }
 
 async function withLiteLLM(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
@@ -227,7 +233,7 @@ async function withLiteLLM(plantId: number, photoCount: number, opb: OpbPlant | 
         { role: 'system', content: buildSystemPrompt() },
         { role: 'user', content },
       ],
-      max_tokens: 1500,
+      max_tokens: 4096,
     }),
   })
   if (!res.ok) {
@@ -236,7 +242,8 @@ async function withLiteLLM(plantId: number, photoCount: number, opb: OpbPlant | 
   }
   const data = await res.json() as Record<string, unknown>
   const text = Array.isArray(data.choices) ? ((data.choices[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content ?? '' : ''
-  return { provider: 'litellm', model, plan: String(text), generatedAt: Date.now() }
+  const truncated = Array.isArray(data.choices) && ((data.choices[0] as Record<string, unknown>)?.finish_reason) === 'length'
+  return { provider: 'litellm', model, plan: truncated ? String(text) + '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.' : String(text), generatedAt: Date.now() }
 }
 
 export async function generateCarePlan(plantId: number, provider?: LlmProvider, photoCount: number = 4): Promise<CarePlanResult> {

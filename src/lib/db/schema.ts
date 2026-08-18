@@ -127,6 +127,23 @@ export const settings = sqliteTable('settings', {
   value: text('value').notNull(),
 })
 
+export const asyncTasks = sqliteTable(
+  'async_tasks',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    type: text('type').notNull(), // care_plan | health | identify
+    plantId: integer('plant_id').references(() => plants.id, { onDelete: 'set null' }),
+    status: text('status').notNull().default('pending'), // pending | running | done | failed
+    progress: integer('progress').notNull().default(0), // 0-100
+    resultJson: text('result_json'),
+    error: text('error'),
+    createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+    startedAt: integer('started_at'),
+    finishedAt: integer('finished_at'),
+  },
+  (t) => [index('tasks_status_idx').on(t.status), index('tasks_plant_idx').on(t.plantId)],
+)
+
 export type Plant = typeof plants.$inferSelect
 export type Photo = typeof photos.$inferSelect
 export type TimelineEntry = typeof timelineEntries.$inferSelect
@@ -134,3 +151,4 @@ export type CareLog = typeof careLogs.$inferSelect
 export type SensorMapping = typeof sensorMappings.$inferSelect
 export type SensorReading = typeof sensorReadings.$inferSelect
 export type DeviceMapping = typeof deviceMappings.$inferSelect
+export type AsyncTask = typeof asyncTasks.$inferSelect

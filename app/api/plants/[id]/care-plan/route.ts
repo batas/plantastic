@@ -1,27 +1,22 @@
 import { NextResponse } from 'next/server'
-import { generateCarePlan } from '@/lib/llm'
-import { addTimelineEntry } from '@/lib/services/care'
+import { createTask, getTaskSteps } from '@/lib/services/tasks'
+import { processTask } from '@/lib/services/task-processors'
 import { getPlant } from '@/lib/services/plants'
 
 export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]/care-plan'>) {
   const { id } = await ctx.params
   const plantId = Number(id)
-  const plant = await getPlant(plantId)
-  if (!plant) return NextResponse.json({ error: 'Nie znaleziono rośliny' }, { status: 404 })
-  const body = await request.json().catch(() => ({}))
-  const photoCount = body.diagnosis ? 8 : 4
-  try {
-    const result = await generateCarePlan(plantId, body.provider, photoCount)
-    await addTimelineEntry(plantId, {
-      kind: 'care_plan',
-      title: `Plan pielęgnacji (${result.provider}: ${result.model})`,
-      content: result.plan,
-      dataJson: JSON.stringify({ provider: result.provider, model: result.model, format: 'markdown' }),
-    })
-    return NextResponse.json({ ok: true, plan: result.plan, provider: result.provider, model: result.model })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Błąd generowania planu'
-    console.error('[care-plan]', err)
-    return NextResponse.json({ error: msg }, { status: 500 })
-  }
+  if (!(await getPlant(plantId))) return NextResponse.json({ error: 'Nie znaleziono rośliny' }, { status: 404 })
+
+  const task = createTask('care_plan', plantId)
+
+  processTask(task.id, 'care_plan', plantId).catch((err) => {
+    console.error(`[task ${task.id}] unhandled:`, err)
+  })
+
+  return NextResponse.json({
+    taskId: task.id,
+    status: 'pending',
+    steps: getTaskSteps('care_plan'),
+  }, { status: 202 })
 }

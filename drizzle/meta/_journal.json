@@ -22,6 +22,13 @@
       "when": 1786800000000,
       "tag": "0004_ha_source",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787071414490,
+      "tag": "0005_async_tasks",
+      "breakpoints": true
     }
   ]
 }
