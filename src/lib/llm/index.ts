@@ -70,7 +70,7 @@ function buildSensorHistory(readings: Record<string, SensorReading[]>): string {
   const lines: string[] = []
   for (const [metric, rs] of Object.entries(readings)) {
     if (!rs.length) continue
-    const label = metric === 'moisture' ? 'Wilgotność' : metric === 'temperature' ? 'Temperatura' : metric === 'light' ? 'Światło' : metric
+    const label = metric === 'moisture' ? 'Wilgotność gleby' : metric === 'air_humidity' ? 'Wilgotność powietrza' : metric === 'temperature' ? 'Temperatura' : metric === 'light' ? 'Światło' : metric
 
     const daily: { date: string; avg: number; count: number }[] = []
     for (let d = 6; d >= 0; d--) {

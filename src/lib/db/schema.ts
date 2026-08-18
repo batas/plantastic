@@ -87,7 +87,7 @@ export const sensorMappings = sqliteTable(
       .notNull()
       .references(() => plants.id, { onDelete: 'cascade' }),
     topic: text('topic').notNull(),
-    metric: text('metric').notNull(), // moisture | temperature | light
+    metric: text('metric').notNull(), // moisture | air_humidity | temperature | light
     source: text('source').notNull().default('mqtt'), // mqtt | ha
   },
   (t) => [index('sensor_topic_idx').on(t.topic)],

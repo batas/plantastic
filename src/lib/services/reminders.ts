@@ -4,7 +4,7 @@ import { getHaSensorMappings, getAllDeviceMappings, recordReading } from './sens
 import { isConnected, publishDiscovery, publishCareStatus } from '@/lib/mqtt'
 import { getState, getEntityRegistry, getDevicesWithSensors } from '@/lib/ha'
 
-const DEVICE_CLASS_METRIC: Record<string, string> = { humidity: 'moisture', moisture: 'moisture', temperature: 'temperature' }
+const DEVICE_CLASS_METRIC: Record<string, string> = { humidity: 'air_humidity', moisture: 'moisture', temperature: 'temperature' }
 
 let started = false
 

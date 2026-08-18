@@ -621,13 +621,14 @@ export default function PlantDetailClient({
         <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
           <h2 className="mb-3 font-semibold">Czujniki</h2>
           <div className="space-y-2 text-sm">
-            {["moisture", "temperature", "light"].map((m) => {
+            {(["moisture", "air_humidity", "temperature", "light"] as const).map((m) => {
               const readings = detail.latestReadings[m]
               const latest = readings?.[0]
-              const unit = m === "moisture" ? "%" : m === "temperature" ? "°C" : "lx"
+              const unit = m === "moisture" || m === "air_humidity" ? "%" : m === "temperature" ? "°C" : "lx"
+              const label = m === "moisture" ? "Wilgotność gleby" : m === "air_humidity" ? "Wilgotność powietrza" : m === "temperature" ? "Temperatura" : "Światło"
               return (
                 <div key={m} className="flex items-center justify-between">
-                  <span className="text-zinc-500">{m}</span>
+                  <span className="text-zinc-500">{label}</span>
                   {latest ? (
                     <span>
                       <strong>{latest.value.toFixed(latest.value % 1 === 0 ? 0 : 1)}</strong> {unit}
@@ -672,7 +673,8 @@ export default function PlantDetailClient({
               {mappingMode === "entity" && (
                 <div className="flex gap-2">
                   <select className={input} value={metric} onChange={(e) => setMetric(e.target.value)}>
-                    <option value="moisture">Wilgotność</option>
+                    <option value="moisture">Wilgotność gleby</option>
+                    <option value="air_humidity">Wilgotność powietrza</option>
                     <option value="temperature">Temperatura</option>
                   </select>
                   <button onClick={addSensorMapping} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">

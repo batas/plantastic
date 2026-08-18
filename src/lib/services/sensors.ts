@@ -25,7 +25,7 @@ export async function deleteSensorMapping(id: number) {
 
 export async function recordReading(plantId: number, metric: string, value: number) {
   db.insert(sensorReadings)
-    .values({ plantId, metric, value, unit: metric === 'moisture' ? '%' : metric === 'temperature' ? '°C' : 'lx' })
+    .values({ plantId, metric, value, unit: metric === 'moisture' || metric === 'air_humidity' ? '%' : metric === 'temperature' ? '°C' : 'lx' })
     .run()
   const cutoff = Math.floor(Date.now() / 1000) - 30 * 86400
   db.delete(sensorReadings).where(and(eq(sensorReadings.plantId, plantId), eq(sensorReadings.metric, metric), lt(sensorReadings.measuredAt, cutoff))).run()

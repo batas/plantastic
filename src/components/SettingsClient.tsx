@@ -168,7 +168,7 @@ export default function SettingsClient({
 
   async function addDeviceMappings(device: HaDevice) {
     if (!newMapping.plantId) return
-    const metricMap: { [key: string]: string } = { humidity: "moisture", moisture: "moisture", temperature: "temperature" }
+    const metricMap: { [key: string]: string } = { humidity: "air_humidity", moisture: "moisture", temperature: "temperature" }
     const payload = device.sensors
       .filter((s) => s.device_class && metricMap[s.device_class])
       .map((s) => ({ topic: s.entity_id, metric: metricMap[s.device_class!] }))
@@ -441,7 +441,8 @@ export default function SettingsClient({
             <div>
               <label className={label}>Metryka</label>
               <select className={input} value={newMapping.metric} onChange={(e) => setNewMapping((m) => ({ ...m, metric: e.target.value }))}>
-                <option value="moisture">Wilgotność</option>
+                <option value="moisture">Wilgotność gleby</option>
+                <option value="air_humidity">Wilgotność powietrza</option>
                 <option value="temperature">Temperatura</option>
               </select>
             </div>
