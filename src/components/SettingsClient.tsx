@@ -44,16 +44,14 @@ export default function SettingsClient({
   const [apiKey, setApiKey] = useState("")
   const [opbClientId, setOpbClientId] = useState("")
   const [opbSecret, setOpbSecret] = useState("")
-  const [newMapping, setNewMapping] = useState({ plantId: "", topic: "", metric: "moisture", source: "mqtt" as "mqtt" | "ha" })
+  const [newMapping, setNewMapping] = useState({ plantId: "", topic: "", metric: "moisture" })
   const [testResult, setTestResult] = useState<{ type: string; ok: boolean; message: string; details?: string } | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
   const [haEntities, setHaEntities] = useState<HaEntity[]>([])
-  const [mqttTopics, setMqttTopics] = useState<{ topic: string; value: string }[]>([])
   const [pickerLoading, setPickerLoading] = useState(false)
   const [pickerError, setPickerError] = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   const [pickerSearch, setPickerSearch] = useState("")
-  const [pickerMode, setPickerMode] = useState<"mqtt" | "ha">("mqtt")
 
   async function testConnection(type: string) {
     setTesting(type)
@@ -148,9 +146,9 @@ export default function SettingsClient({
     await fetch("/api/sensors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plantId: Number(newMapping.plantId), topic: newMapping.topic, metric: newMapping.metric, source: newMapping.source }),
+      body: JSON.stringify({ plantId: Number(newMapping.plantId), topic: newMapping.topic, metric: newMapping.metric, source: "ha" }),
     })
-    setNewMapping({ plantId: "", topic: "", metric: "moisture", source: "mqtt" })
+    setNewMapping({ plantId: "", topic: "", metric: "moisture" })
     await load()
     router.refresh()
   }
@@ -160,32 +158,11 @@ export default function SettingsClient({
     await load()
   }
 
-  async function fetchMqttTopics() {
-    setPickerLoading(true)
-    setPickerError(null)
-    setPickerMode("mqtt")
-    try {
-      const res = await fetch("/api/mqtt/topics")
-      if (!res.ok) {
-        const data = await res.json()
-        setPickerError(data.error ?? `Błąd ${res.status}`)
-        return
-      }
-      setMqttTopics(await res.json())
-      setShowPicker(true)
-    } catch {
-      setPickerError("Nie udało się pobrać topiców z MQTT")
-    } finally {
-      setPickerLoading(false)
-    }
-  }
-
   async function fetchHaEntities() {
     setPickerLoading(true)
     setPickerError(null)
-    setPickerMode("ha")
     try {
-      const res = await fetch("/api/ha/entities")
+      const res = await fetch("/api/ha/entities?domain=sensor")
       if (!res.ok) {
         const data = await res.json()
         setPickerError(data.error ?? `Błąd ${res.status}`)
@@ -206,9 +183,6 @@ export default function SettingsClient({
     setPickerSearch("")
   }
 
-  const filteredMqtt = mqttTopics.filter(
-    (e) => pickerSearch === "" || e.topic.toLowerCase().includes(pickerSearch.toLowerCase()) || e.value.toLowerCase().includes(pickerSearch.toLowerCase())
-  )
   const filteredHa = haEntities.filter(
     (e) =>
       pickerSearch === "" ||
@@ -222,48 +196,12 @@ export default function SettingsClient({
 
       <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">MQTT</h2>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => testConnection("mqtt")} disabled={testing === "mqtt"} className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-              {testing === "mqtt" ? "Testowanie..." : "Testuj połączenie"}
-            </button>
-            <span className={`rounded-full px-2 py-0.5 text-xs ${connected ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-              {connected ? "Połączono" : "Rozłączono"}
-            </span>
-          </div>
-        </div>
-        <form onSubmit={save} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={label}>Host</label>
-              <input className={input} value={cfg.mqtt.host} onChange={(e) => setCfg((c) => ({ ...c, mqtt: { ...c.mqtt, host: e.target.value } }))} placeholder="core-mosquitto" />
-            </div>
-            <div>
-              <label className={label}>Port</label>
-              <input className={input} type="number" value={cfg.mqtt.port} onChange={(e) => setCfg((c) => ({ ...c, mqtt: { ...c.mqtt, port: Number(e.target.value) } }))} />
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={label}>Użytkownik</label>
-              <input className={input} value={cfg.mqtt.user} onChange={(e) => setCfg((c) => ({ ...c, mqtt: { ...c.mqtt, user: e.target.value } }))} />
-            </div>
-            <div>
-              <label className={label}>Hasło {cfg.mqtt.hasPassword && "(zapisane)"}</label>
-              <input className={input} type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" />
-            </div>
-          </div>
-        </form>
-      </section>
-
-      <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold">Home Assistant</h2>
           <button type="button" onClick={() => testConnection("ha")} disabled={testing === "ha"} className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
             {testing === "ha" ? "Testowanie..." : "Testuj połączenie"}
           </button>
         </div>
-        <div className="space-y-4">
+        <form onSubmit={save} className="space-y-4">
           <div>
             <label className={label}>URL (np. http://homeassistant.local:8123)</label>
             <input className={input} value={cfg.ha.url} onChange={(e) => setCfg((c) => ({ ...c, ha: { ...c.ha, url: e.target.value } }))} placeholder="http://homeassistant.local:8123" />
@@ -271,6 +209,38 @@ export default function SettingsClient({
           <div>
             <label className={label}>Long-Lived Access Token {cfg.ha.hasToken && "(zapisany)"}</label>
             <input className={input} type="password" value={haToken} onChange={(e) => setHaToken(e.target.value)} placeholder="eyJ..." />
+          </div>
+        </form>
+      </section>
+
+      <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">MQTT (publikacja roślin do HA)</h2>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => testConnection("mqtt")} disabled={testing === "mqtt"} className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+              {testing === "mqtt" ? "Testowanie..." : "Testuj"}
+            </button>
+            <span className={`rounded-full px-2 py-0.5 text-xs ${connected ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+              {connected ? "Połączono" : "Rozłączono"}
+            </span>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className={label}>Host</label>
+            <input className={input} value={cfg.mqtt.host} onChange={(e) => setCfg((c) => ({ ...c, mqtt: { ...c.mqtt, host: e.target.value } }))} placeholder="core-mosquitto" />
+          </div>
+          <div>
+            <label className={label}>Port</label>
+            <input className={input} type="number" value={cfg.mqtt.port} onChange={(e) => setCfg((c) => ({ ...c, mqtt: { ...c.mqtt, port: Number(e.target.value) } }))} />
+          </div>
+          <div>
+            <label className={label}>Użytkownik</label>
+            <input className={input} value={cfg.mqtt.user} onChange={(e) => setCfg((c) => ({ ...c, mqtt: { ...c.mqtt, user: e.target.value } }))} />
+          </div>
+          <div>
+            <label className={label}>Hasło {cfg.mqtt.hasPassword && "(zapisane)"}</label>
+            <input className={input} type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" />
           </div>
         </div>
       </section>
@@ -343,7 +313,7 @@ export default function SettingsClient({
       </div>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="mb-3 font-semibold">Mapowanie czujników</h2>
+        <h2 className="mb-3 font-semibold">Mapowanie czujników z HA</h2>
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-40 flex-1">
             <label className={label}>Roślina</label>
@@ -356,19 +326,12 @@ export default function SettingsClient({
               ))}
             </select>
           </div>
-          <div className="min-w-40 flex-1">
-            <label className={label}>Źródło</label>
-            <select className={input} value={newMapping.source} onChange={(e) => setNewMapping((m) => ({ ...m, source: e.target.value as "mqtt" | "ha", topic: "" }))}>
-              <option value="mqtt">MQTT</option>
-              <option value="ha">Home Assistant</option>
-            </select>
-          </div>
           <div className="min-w-56 flex-1">
-            <label className={label}>{newMapping.source === "ha" ? "Entity ID" : "Topic"}</label>
+            <label className={label}>Entity ID</label>
             <div className="flex gap-2">
-              <input className={input + " flex-1"} placeholder={newMapping.source === "ha" ? "sensor.wilgotnosc" : "home/plants/1/moisture"} value={newMapping.topic} onChange={(e) => setNewMapping((m) => ({ ...m, topic: e.target.value }))} />
-              <button type="button" onClick={newMapping.source === "ha" ? fetchHaEntities : fetchMqttTopics} disabled={pickerLoading} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-                {pickerLoading ? "Szukam..." : newMapping.source === "ha" ? "Przeglądaj HA" : "Przeglądaj MQTT"}
+              <input className={input + " flex-1"} placeholder="sensor.wilgotnosc" value={newMapping.topic} onChange={(e) => setNewMapping((m) => ({ ...m, topic: e.target.value }))} />
+              <button type="button" onClick={fetchHaEntities} disabled={pickerLoading} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                {pickerLoading ? "Szukam..." : "Przeglądaj HA"}
               </button>
             </div>
           </div>
@@ -377,7 +340,6 @@ export default function SettingsClient({
             <select className={input} value={newMapping.metric} onChange={(e) => setNewMapping((m) => ({ ...m, metric: e.target.value }))}>
               <option value="moisture">Wilgotność</option>
               <option value="temperature">Temperatura</option>
-              <option value="light">Światło</option>
             </select>
           </div>
           <button onClick={addMapping} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
@@ -388,28 +350,20 @@ export default function SettingsClient({
         {showPicker && (
           <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-medium">{pickerMode === "ha" ? "Encje HA" : "Topici MQTT"} ({pickerMode === "ha" ? filteredHa.length : filteredMqtt.length})</h3>
+              <h3 className="text-sm font-medium">Czujniki HA ({filteredHa.length})</h3>
               <button type="button" onClick={() => { setShowPicker(false); setPickerSearch("") }} className="text-xs text-zinc-500 hover:underline">zamknij</button>
             </div>
-            <input className={input + " mb-2"} placeholder="Szukaj..." value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} autoFocus />
+            <input className={input + " mb-2"} placeholder="Szukaj czujnika..." value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} autoFocus />
             {pickerError && <p className="mb-2 text-sm text-red-600">{pickerError}</p>}
             <div className="max-h-64 space-y-1 overflow-y-auto">
-              {pickerMode === "ha"
-                ? filteredHa.map((e) => (
-                    <button key={e.entity_id} type="button" onClick={() => selectEntity(e.entity_id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white dark:hover:bg-zinc-700">
-                      <span className="flex-1 truncate font-mono text-xs">{e.entity_id}</span>
-                      <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{e.state}{e.unit ? ` ${e.unit}` : ""}</span>
-                      {e.friendly_name && <span className="shrink-0 text-xs text-zinc-400">{e.friendly_name}</span>}
-                    </button>
-                  ))
-                : filteredMqtt.map((e) => (
-                    <button key={e.topic} type="button" onClick={() => selectEntity(e.topic)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white dark:hover:bg-zinc-700">
-                      <span className="flex-1 truncate font-mono text-xs">{e.topic}</span>
-                      {e.value && <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{e.value}</span>}
-                    </button>
-                  ))
-              }
-              {((pickerMode === "ha" && filteredHa.length === 0) || (pickerMode === "mqtt" && filteredMqtt.length === 0)) && <p className="text-sm text-zinc-400">Brak wyników.</p>}
+              {filteredHa.map((e) => (
+                <button key={e.entity_id} type="button" onClick={() => selectEntity(e.entity_id)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white dark:hover:bg-zinc-700">
+                  <span className="flex-1 truncate font-mono text-xs">{e.entity_id}</span>
+                  <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{e.state}{e.unit ? ` ${e.unit}` : ""}</span>
+                  {e.friendly_name && <span className="shrink-0 text-xs text-zinc-400">{e.friendly_name}</span>}
+                </button>
+              ))}
+              {filteredHa.length === 0 && <p className="text-sm text-zinc-400">Brak wyników.</p>}
             </div>
           </div>
         )}
@@ -418,9 +372,6 @@ export default function SettingsClient({
           {mappings.map((m) => (
             <li key={m.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800">
               <span className="flex items-center gap-2">
-                <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${m.source === "ha" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"}`}>
-                  {m.source === "ha" ? "HA" : "MQTT"}
-                </span>
                 <strong>{m.plantName ?? `#${m.plantId}`}</strong>
                 <span className="text-zinc-400">·</span>
                 {m.metric}

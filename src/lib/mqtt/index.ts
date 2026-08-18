@@ -1,7 +1,6 @@
 import mqtt, { type MqttClient, type IClientOptions } from 'mqtt'
 import { getConfig, maskSecret } from '@/lib/settings'
 import { getPlant, getNextCareDates } from '@/lib/services/plants'
-import { getMqttSensorMappings } from '@/lib/services/sensors'
 import { logCare, normalizeCareKind } from '@/lib/services/care'
 import { CARE_TYPES, CARE_META } from '@/lib/care-types'
 
@@ -32,13 +31,6 @@ export function onStatusChange(fn: (connected: boolean) => void) {
 function emitStatus() {
   const connected = isConnected()
   for (const fn of statusListeners) fn(connected)
-}
-
-function stripPrefix(topic: string): string {
-  const parts = topic.split('/')
-  let idx = 0
-  while (idx < parts.length && parts[idx] === '#') idx++
-  return parts.slice(idx).join('/')
 }
 
 export async function connectMqtt() {
@@ -91,22 +83,12 @@ export async function connectMqtt() {
       }
       return
     }
-
-    const { recordReading } = await import('@/lib/services/sensors')
-    const value = Number(text)
-    if (Number.isNaN(value)) return
-    const mappings = await getMqttSensorMappings()
-    const match = mappings.find((m) => topic === stripPrefix(m.topic) || topic.includes(stripPrefix(m.topic)))
-    if (match) {
-      await recordReading(match.plantId, match.metric, value)
-    }
   })
 }
 
 export async function refreshSubscriptions() {
   if (!getClient()?.connected) return
-  const mappings = await getMqttSensorMappings()
-  const wanted = new Set(mappings.map((m) => stripPrefix(m.topic)))
+  const wanted = new Set<string>()
   wanted.add('home/plants/+/cmd')
   for (const t of wanted) {
     if (!subscribed.has(t)) {

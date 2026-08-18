@@ -11,15 +11,11 @@ export async function getHaSensorMappings() {
   return db.select().from(sensorMappings).where(eq(sensorMappings.source, 'ha')).all()
 }
 
-export async function getMqttSensorMappings() {
-  return db.select().from(sensorMappings).where(eq(sensorMappings.source, 'mqtt')).all()
-}
-
 export async function listSensorMappings() {
   return db.select().from(sensorMappings).all()
 }
 
-export async function addSensorMapping(plantId: number, topic: string, metric: string, source: string = 'mqtt') {
+export async function addSensorMapping(plantId: number, topic: string, metric: string, source: string = 'ha') {
   db.insert(sensorMappings).values({ plantId, topic, metric, source }).run()
 }
 

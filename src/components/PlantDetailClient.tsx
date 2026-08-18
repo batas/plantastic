@@ -79,8 +79,6 @@ export default function PlantDetailClient({
   const [noteText, setNoteText] = useState("")
   const [topic, setTopic] = useState("")
   const [metric, setMetric] = useState("moisture")
-  const [sensorSource, setSensorSource] = useState<"mqtt" | "ha">("mqtt")
-  const [haTopics, setHaTopics] = useState<string[]>([])
   const [haEntities, setHaEntities] = useState<{ entity_id: string; state: string; friendly_name: string | null }[]>([])
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [topicError, setTopicError] = useState("")
@@ -177,7 +175,7 @@ export default function PlantDetailClient({
     await fetch("/api/sensors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plantId: plant.id, topic: topic.trim(), metric, source: sensorSource }),
+      body: JSON.stringify({ plantId: plant.id, topic: topic.trim(), metric, source: "ha" }),
     })
     setTopic("")
     router.refresh()
@@ -187,25 +185,15 @@ export default function PlantDetailClient({
     setLoadingTopics(true)
     setTopicError("")
     try {
-      if (sensorSource === "ha") {
-        const res = await fetch("/api/ha/entities")
-        const data = await res.json()
-        if (!res.ok) {
-          setTopicError(data.error ?? "Nie udało się pobrać encji z HA")
-          return
-        }
-        setHaEntities(Array.isArray(data) ? data : [])
-      } else {
-        const res = await fetch("/api/mqtt/topics")
-        const data = await res.json()
-        if (!res.ok) {
-          setTopicError(data.error ?? "Nie udało się pobrać topiców")
-          return
-        }
-        setHaTopics(Array.isArray(data) ? data.map((d: { topic: string }) => d.topic) : [])
+      const res = await fetch("/api/ha/entities?domain=sensor")
+      const data = await res.json()
+      if (!res.ok) {
+        setTopicError(data.error ?? "Nie udało się pobrać encji z HA")
+        return
       }
+      setHaEntities(Array.isArray(data) ? data : [])
     } catch {
-      setTopicError(sensorSource === "ha" ? "Błąd połączenia z HA" : "Błąd połączenia z MQTT")
+      setTopicError("Błąd połączenia z HA")
     } finally {
       setLoadingTopics(false)
     }
@@ -423,30 +411,22 @@ export default function PlantDetailClient({
             })}
           </div>
           <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-            <p className="mb-2 text-xs text-zinc-400">Mapuj czujnik do tej rośliny</p>
+            <p className="mb-2 text-xs text-zinc-400">Mapuj czujnik HA do tej rośliny</p>
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
-                <select className={input} value={sensorSource} onChange={(e) => { setSensorSource(e.target.value as "mqtt" | "ha"); setTopic(""); setHaTopics([]); setHaEntities([]) }}>
-                  <option value="mqtt">MQTT</option>
-                  <option value="ha">Home Assistant</option>
-                </select>
-                <input className={input + " flex-1"} placeholder={sensorSource === "ha" ? "sensor.wilgotnosc" : "np. home/plants/1/moisture"} value={topic} onChange={(e) => setTopic(e.target.value)} list="sensor-topics" />
+                <input className={input + " flex-1"} placeholder="sensor.wilgotnosc" value={topic} onChange={(e) => setTopic(e.target.value)} list="sensor-topics" />
                 <button type="button" onClick={loadTopics} disabled={loadingTopics} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-                  {loadingTopics ? "..." : sensorSource === "ha" ? "Przeglądaj HA" : "Przeglądaj MQTT"}
+                  {loadingTopics ? "..." : "Przeglądaj HA"}
                 </button>
               </div>
               {topicError && <p className="text-xs text-red-600">{topicError}</p>}
               <datalist id="sensor-topics">
-                {sensorSource === "ha"
-                  ? haEntities.map((e) => <option key={e.entity_id} value={e.entity_id}>{e.friendly_name ?? e.entity_id} ({e.state})</option>)
-                  : haTopics.map((t) => <option key={t} value={t} />)
-                }
+                {haEntities.map((e) => <option key={e.entity_id} value={e.entity_id}>{e.friendly_name ?? e.entity_id} ({e.state})</option>)}
               </datalist>
               <div className="flex gap-2">
                 <select className={input} value={metric} onChange={(e) => setMetric(e.target.value)}>
                   <option value="moisture">Wilgotność</option>
                   <option value="temperature">Temperatura</option>
-                  <option value="light">Światło</option>
                 </select>
                 <button onClick={addSensorMapping} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">
                   Dodaj
