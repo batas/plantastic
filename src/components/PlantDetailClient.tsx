@@ -60,10 +60,12 @@ export default function PlantDetailClient({
   detail,
   careStatus,
   opbGuide,
+  sensorMappings,
 }: {
   detail: Detail
   careStatus: CareStatus[]
   opbGuide: OpbGuide | null
+  sensorMappings: { id: number; plantId: number; topic: string; metric: string; source: string }[]
 }) {
   const router = useRouter()
   const { plant } = detail
@@ -210,7 +212,7 @@ export default function PlantDetailClient({
   }
 
   async function addDeviceMappings(device: { device: { name: string | null }; sensors: { entity_id: string; device_class: string | null }[] }) {
-    const metricMap: { [key: string]: string } = { humidity: "moisture", temperature: "temperature" }
+    const metricMap: { [key: string]: string } = { humidity: "moisture", moisture: "moisture", temperature: "temperature" }
     const payload = device.sensors
       .filter((s) => s.device_class && metricMap[s.device_class])
       .map((s) => ({ topic: s.entity_id, metric: metricMap[s.device_class!] }))
@@ -549,6 +551,25 @@ export default function PlantDetailClient({
                 </div>
               )}
             </div>
+            {sensorMappings.length > 0 && (
+              <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                <p className="mb-1 text-xs text-zinc-400">Zmapowane czujniki</p>
+                <div className="space-y-1">
+                  {sensorMappings.map((m) => (
+                    <div key={m.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-1.5 text-xs dark:bg-zinc-800/50">
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium">{m.metric}</span>
+                        <span className="ml-2 truncate text-zinc-400">{m.topic}</span>
+                        <span className="ml-1 rounded bg-zinc-200 px-1 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-700">{m.source}</span>
+                      </div>
+                      <button type="button" onClick={async () => { await fetch(`/api/sensors?id=${m.id}`, { method: "DELETE" }); router.refresh() }} className="ml-2 shrink-0 text-zinc-400 hover:text-red-500">
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

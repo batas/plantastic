@@ -168,7 +168,7 @@ export default function SettingsClient({
 
   async function addDeviceMappings(device: HaDevice) {
     if (!newMapping.plantId) return
-    const metricMap: { [key: string]: string } = { humidity: "moisture", temperature: "temperature" }
+    const metricMap: { [key: string]: string } = { humidity: "moisture", moisture: "moisture", temperature: "temperature" }
     const payload = device.sensors
       .filter((s) => s.device_class && metricMap[s.device_class])
       .map((s) => ({ topic: s.entity_id, metric: metricMap[s.device_class!] }))
