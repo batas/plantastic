@@ -66,14 +66,14 @@ export default function SettingsClient({
   const [pickerLoading, setPickerLoading] = useState(false)
   const [pickerError, setPickerError] = useState<string | null>(null)
   const [pickerSearch, setPickerSearch] = useState("")
-  const [showDropdown, setShowDropdown] = useState(false)
+
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowDropdown(false)
+        
       }
     }
     document.addEventListener("mousedown", handleClickOutside)
@@ -159,7 +159,7 @@ export default function SettingsClient({
     })
     setNewMapping({ plantId: "", topic: "", metric: "moisture" })
     setPickerSearch("")
-    setShowDropdown(false)
+    
     await load()
     router.refresh()
   }
@@ -176,7 +176,7 @@ export default function SettingsClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ plantId: Number(newMapping.plantId), mappings: payload }),
     })
-    setShowDropdown(false)
+    
     setPickerSearch("")
     await load()
     router.refresh()
@@ -222,7 +222,7 @@ export default function SettingsClient({
   function selectEntity(id: string) {
     setNewMapping((m) => ({ ...m, topic: id }))
     setPickerSearch("")
-    setShowDropdown(false)
+    
   }
 
   const filteredHa = haEntities.filter(
@@ -354,10 +354,10 @@ export default function SettingsClient({
         <h2 className="mb-3 font-semibold">Mapowanie czujników z HA</h2>
 
         <div className="mb-4 flex gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800">
-          <button type="button" onClick={() => { setMappingMode("device"); setShowDropdown(false); setPickerSearch("") }} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${mappingMode === "device" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
+          <button type="button" onClick={() => { setMappingMode("device"); setPickerSearch("") }} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${mappingMode === "device" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
             Po urządzeniu
           </button>
-          <button type="button" onClick={() => { setMappingMode("entity"); setShowDropdown(false); setPickerSearch("") }} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${mappingMode === "entity" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
+          <button type="button" onClick={() => { setMappingMode("entity"); setPickerSearch("") }} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${mappingMode === "entity" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
             Pojedynczy czujnik
           </button>
         </div>
@@ -375,35 +375,40 @@ export default function SettingsClient({
         </div>
 
         {mappingMode === "entity" && (
-          <div className="relative mt-3" ref={dropdownRef}>
-            <label className={label}>Szukaj czujnika HA</label>
-            <input
-              className={input}
-              placeholder="Wpisz nazwę entity, np. sensor.wilgotnosc..."
-              value={pickerSearch}
-              onChange={(e) => { setPickerSearch(e.target.value); setShowDropdown(true) }}
-              onFocus={async () => { await ensureHaEntities(); setShowDropdown(true) }}
-              ref={searchInputRef}
-            />
+          <div className="mt-3" ref={dropdownRef}>
+            <label className={label}>Czujniki HA</label>
+            <div className="relative">
+              <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              <input
+                className={`${input} !pl-9`}
+                placeholder="Filtruj czujniki po nazwie entity..."
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                onFocus={async () => { await ensureHaEntities() }}
+                ref={searchInputRef}
+              />
+            </div>
             {pickerLoading && <p className="mt-1 text-xs text-zinc-400">Ładowanie encji z HA...</p>}
             {pickerError && <p className="mt-1 text-xs text-red-600">{pickerError}</p>}
-            {showDropdown && !pickerLoading && haEntities.length > 0 && (
-              <div className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                {filteredHa.length === 0 && <p className="px-3 py-2 text-sm text-zinc-400">Brak wyników dla &quot;{pickerSearch}&quot;</p>}
+            {!pickerLoading && haEntities.length > 0 && (
+              <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
+                {filteredHa.length === 0 && <p className="px-3 py-3 text-sm text-zinc-400">Brak wyników dla &quot;{pickerSearch}&quot;</p>}
                 {filteredHa.slice(0, 50).map((e) => (
-                  <button key={e.entity_id} type="button" onClick={() => selectEntity(e.entity_id)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                  <button key={e.entity_id} type="button" onClick={() => selectEntity(e.entity_id)} className="flex w-full items-center gap-2 border-b border-zinc-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-zinc-100 dark:border-zinc-700/50 dark:hover:bg-zinc-700">
                     <span className="flex-1 truncate font-mono text-xs">{e.entity_id}</span>
                     <span className="shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{e.state}{e.unit ? ` ${e.unit}` : ""}</span>
                     {e.friendly_name && <span className="shrink-0 max-w-[120px] truncate text-xs text-zinc-400">{e.friendly_name}</span>}
                   </button>
                 ))}
-                {filteredHa.length > 50 && <p className="px-3 py-1 text-xs text-zinc-400">...i {filteredHa.length - 50} więcej</p>}
+                {filteredHa.length > 50 && <p className="px-3 py-1.5 text-center text-xs text-zinc-400">...i {filteredHa.length - 50} więcej</p>}
+                <p className="px-3 py-1.5 text-center text-xs text-zinc-400">{Math.min(filteredHa.length, 50)} z {haEntities.length} encji</p>
               </div>
             )}
-            {newMapping.topic && (
-              <p className="mt-1 text-xs text-zinc-500">Wybrano: <code className="font-mono">{newMapping.topic}</code></p>
-            )}
           </div>
+        )}
+
+        {newMapping.topic && (
+          <p className="mt-1 text-xs text-zinc-500">Wybrano: <code className="font-mono">{newMapping.topic}</code></p>
         )}
 
         {mappingMode === "entity" && newMapping.topic && (
@@ -422,26 +427,29 @@ export default function SettingsClient({
         )}
 
         {mappingMode === "device" && (
-          <div className="relative mt-3" ref={dropdownRef}>
-            <label className={label}>Szukaj urządzenia HA</label>
-            <input
-              className={input}
-              placeholder="Wpisz nazwę producenta lub urządzenia..."
-              value={pickerSearch}
-              onChange={(e) => { setPickerSearch(e.target.value); setShowDropdown(true) }}
-              onFocus={async () => { await ensureHaDevices(); setShowDropdown(true) }}
-              ref={searchInputRef}
-            />
+          <div className="mt-3" ref={dropdownRef}>
+            <label className={label}>Urządzenia HA</label>
+            <div className="relative">
+              <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              <input
+                className={`${input} !pl-9`}
+                placeholder="Filtruj urządzenia po nazwie, producencie..."
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                onFocus={async () => { await ensureHaDevices() }}
+                ref={searchInputRef}
+              />
+            </div>
             {pickerLoading && <p className="mt-1 text-xs text-zinc-400">Ładowanie urządzeń z HA...</p>}
             {pickerError && <p className="mt-1 text-xs text-red-600">{pickerError}</p>}
-            {showDropdown && !pickerLoading && haDevices.length > 0 && (
-              <div className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                {filteredDevices.length === 0 && <p className="px-3 py-2 text-sm text-zinc-400">Brak wyników dla &quot;{pickerSearch}&quot;</p>}
+            {!pickerLoading && haDevices.length > 0 && (
+              <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
+                {filteredDevices.length === 0 && <p className="px-3 py-3 text-sm text-zinc-400">Brak wyników dla &quot;{pickerSearch}&quot;</p>}
                 {filteredDevices.map((d) => (
-                  <button key={d.device.id} type="button" onClick={() => addDeviceMappings(d)} className="flex w-full flex-col gap-1 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                  <button key={d.device.id} type="button" onClick={() => addDeviceMappings(d)} className="flex w-full flex-col gap-1 border-b border-zinc-100 px-3 py-2.5 text-left text-sm last:border-b-0 hover:bg-zinc-100 dark:border-zinc-700/50 dark:hover:bg-zinc-700">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{d.device.name ?? d.device.model ?? d.device.id}</span>
-                      <span className="text-xs text-zinc-400">{d.sensors.length} czujników</span>
+                      <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">{d.sensors.length} czujników</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {d.sensors.map((s) => (
@@ -453,6 +461,7 @@ export default function SettingsClient({
                     {d.device.manufacturer && <span className="text-xs text-zinc-400">{d.device.manufacturer}{d.device.model ? ` · ${d.device.model}` : ""}</span>}
                   </button>
                 ))}
+                <p className="px-3 py-1.5 text-center text-xs text-zinc-400">{filteredDevices.length} z {haDevices.length} urządzeń</p>
               </div>
             )}
           </div>
