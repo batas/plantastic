@@ -5,7 +5,7 @@ import OpenAI from 'openai'
 import { getConfig, type LlmProvider, maskSecret } from '@/lib/settings'
 import { getPhotosDir } from '@/lib/settings'
 import { getPlantDetail } from '@/lib/services/plants'
-import { getOpbInfo } from '@/lib/opb'
+import { getOpbInfo, type OpbPlant } from '@/lib/opb'
 import type { CareLog, Photo, Plant, SensorReading } from '@/lib/db/schema'
 
 export interface CarePlanResult {
@@ -29,22 +29,67 @@ function photoBase64(photo: Photo): { data: string; mime: "image/png" | "image/w
 function buildSystemPrompt(): string {
   return [
     'Jesteś ekspertem od pielęgnacji roślin domowych.',
-    'Na podstawie zdjęć rośliny, historii pielęgnacji, danych z czujników i metadanych gatunku',
-    'przygotuj konkretny plan pielęgnacji po polsku.',
-    'Uwzględnij: czy roślina wygląda zdrowo, symptomy problemów (żółknięcie, więdnięcie, szkodniki),',
-    'zalecenia dot. podlewania i nawożenia w najbliższym tygodniu, poziom światła i temperaturę.',
+    'Na podstawie danych o roślinie, jej historii pielęgnacji, aktualnych i historycznych odczytów czujników,',
+    'informacji o gatunku (OPB) oraz zdjęć przygotuj konkretny plan pielęgnacji po polsku.',
+    'Uwzględnij: aktualny stan rośliny, trendy odczytów (czy wilgotność spada, temperatura jest stabilna itp.),',
+    'symptomy problemów, zalecenia dot. podlewania i nawożenia,',
+    'warunki środowiskowe (światło, temperatura, wilgotność) i jak się mają do wymagań gatunku.',
     'ODPOWIEDZ W FORMACIE MARKDOWN. Używaj nagłówków (##, ###), list (* i 1.), pogrubień (**tekst**).',
     'Sekcje: "## Stan rośliny", "## Co zrobić teraz", "## Obserwować pod kątem".',
   ].join(' ')
 }
 
-function buildUserPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlantDetail>>): string {
-  const readings = Object.entries(detail?.latestReadings ?? {})
-    .map(([metric, rs]) => `${metric}: ${rs[0] ? `${rs[0].value}${rs[0].unit ?? ''} (${new Date(rs[0].measuredAt * 1000).toISOString()})` : 'brak'}`)
-    .join(', ')
+function buildSensorHistory(readings: Record<string, SensorReading[]>): string {
+  const now = Date.now() / 1000
+  const DAY = 86400
+  const lines: string[] = []
+  for (const [metric, rs] of Object.entries(readings)) {
+    if (!rs.length) continue
+    const label = metric === 'moisture' ? 'Wilgotność' : metric === 'temperature' ? 'Temperatura' : metric === 'light' ? 'Światło' : metric
+
+    const daily: { date: string; avg: number; count: number }[] = []
+    for (let d = 6; d >= 0; d--) {
+      const dayStart = now - (d + 1) * DAY
+      const dayEnd = now - d * DAY
+      const dayReadings = rs.filter((r) => r.measuredAt >= dayStart && r.measuredAt < dayEnd)
+      if (dayReadings.length > 0) {
+        const avg = dayReadings.reduce((s, r) => s + r.value, 0) / dayReadings.length
+        const dateStr = new Date((dayEnd - DAY / 2) * 1000).toLocaleDateString('pl-PL', { month: 'short', day: 'numeric' })
+        daily.push({ date: dateStr, avg: Math.round(avg * 10) / 10, count: dayReadings.length })
+      }
+    }
+    if (daily.length === 0) continue
+    const vals = daily.map((d) => d.avg)
+    const trend = vals.length >= 2 ? vals[vals.length - 1] - vals[0] : 0
+    const trendStr = trend > 1 ? '↑ rośnie' : trend < -1 ? '↓ spada' : '→ stabilna'
+    const unit = rs[0]?.unit ?? ''
+    const current = rs[0]?.value
+    lines.push(`${label}: ${current ?? '?'}${unit} (teraz), trend ${trendStr}`)
+    if (daily.length >= 3) {
+      lines.push(`  Historia (7 dni): ${daily.map((d) => `${d.date} ${d.avg}${unit}`).join(' → ')}`)
+    }
+  }
+  return lines.length > 0 ? lines.join('\n') : 'Brak danych z czujników'
+}
+
+function buildOpbSection(opb: OpbPlant | null): string {
+  if (!opb) return ''
+  const parts: string[] = ['[Dane gatunku z Open Plant Book]']
+  if (opb.common_name) parts.push(`Nazwa zwyczajowa: ${opb.common_name}`)
+  if (opb.family) parts.push(`Rodzina: ${opb.family}`)
+  if (opb.sunlight) parts.push(`Światło: ${Array.isArray(opb.sunlight) ? opb.sunlight.join(', ') : opb.sunlight}`)
+  if (opb.watering) parts.push(`Podlewanie: ${Array.isArray(opb.watering) ? opb.watering.join(', ') : opb.watering}`)
+  if (opb.maintenance) parts.push(`Pielęgnacja: ${opb.maintenance}`)
+  if (opb.growth_rate) parts.push(`Tempo wzrostu: ${opb.growth_rate}`)
+  if (opb.drought_tolerant != null) parts.push(`Odporność na suszę: ${opb.drought_tolerant ? 'tak' : 'nie'}`)
+  if (opb.poisonous_to_pets != null) parts.push(`Trujące dla zwierząt: ${opb.poisonous_to_pets ? 'TAK ⚠️' : 'nie'}`)
+  return parts.join('\n')
+}
+
+function buildUserPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlantDetail>>, opb: OpbPlant | null, photoCount: number): string {
   const lastWater = detail?.careLogs.find((c) => c.kind === 'water')
   const lastFert = detail?.careLogs.find((c) => c.kind === 'fertilize')
-  return [
+  const lines = [
     `Roślina: ${plant.name}`,
     `Gatunek: ${plant.species ?? 'nieznany'}${plant.scientificName ? ` (${plant.scientificName})` : ''}`,
     plant.notes ? `Notatki: ${plant.notes}` : null,
@@ -52,14 +97,17 @@ function buildUserPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlan
     `Interwał nawożenia: ${plant.fertilizeIntervalDays ?? 'brak'} dni`,
     `Ostatnie podlewanie: ${lastWater ? new Date(lastWater.createdAt * 1000).toLocaleString('pl-PL') : 'brak'}`,
     `Ostatnie nawożenie: ${lastFert ? new Date(lastFert.createdAt * 1000).toLocaleString('pl-PL') : 'brak'}`,
-    readings ? `Czujniki (ostatnie): ${readings}` : null,
-    '\nZdjęcia rośliny:',
+    '',
+    buildSensorHistory(detail?.latestReadings ?? {}),
+    '',
+    buildOpbSection(opb),
+    '',
+    `\nZdjęcia rośliny (ostatnie ${photoCount}):`,
   ]
-    .filter(Boolean)
-    .join('\n')
+  return lines.filter((l) => l != null).join('\n')
 }
 
-async function withOpenAi(plantId: number): Promise<CarePlanResult> {
+async function withOpenAi(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
   const cfg = getConfig()
   const model = cfg.llm?.model ?? 'gpt-4o-mini'
   console.log(`[llm] openai: model=${model} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
@@ -67,11 +115,11 @@ async function withOpenAi(plantId: number): Promise<CarePlanResult> {
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: OpenAIContent = []
-  content.push({ type: 'text', text: buildUserPrompt(plant, detail) })
+  content.push({ type: 'text', text: buildUserPrompt(plant, detail, opb, photoCount) })
   for (const photo of detail!.photos) {
     const { data, mime } = photoBase64(photo)
     content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } })
-    if (content.length >= 9) break
+    if (content.length > photoCount) break
   }
   const res = await client.chat.completions.create({
     model,
@@ -84,7 +132,7 @@ async function withOpenAi(plantId: number): Promise<CarePlanResult> {
   return { provider: 'openai', model, plan: res.choices[0]?.message?.content ?? '', generatedAt: Date.now() }
 }
 
-async function withAnthropic(plantId: number): Promise<CarePlanResult> {
+async function withAnthropic(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
   const cfg = getConfig()
   const model = cfg.llm?.model ?? 'claude-3-5-sonnet-latest'
   console.log(`[llm] anthropic: model=${model} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
@@ -92,11 +140,11 @@ async function withAnthropic(plantId: number): Promise<CarePlanResult> {
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: AnthropicContent = []
-  content.push({ type: 'text', text: buildUserPrompt(plant, detail) })
+  content.push({ type: 'text', text: buildUserPrompt(plant, detail, opb, photoCount) })
   for (const photo of detail!.photos) {
     const { data, mime } = photoBase64(photo)
     content.push({ type: 'image', source: { type: 'base64', media_type: mime, data } })
-    if (content.length >= 9) break
+    if (content.length > photoCount) break
   }
   const res = await client.messages.create({
     model,
@@ -111,7 +159,7 @@ async function withAnthropic(plantId: number): Promise<CarePlanResult> {
   return { provider: 'anthropic', model, plan: text, generatedAt: Date.now() }
 }
 
-async function withOllama(plantId: number): Promise<CarePlanResult> {
+async function withOllama(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
   const cfg = getConfig()
   const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:11434/v1'
   const model = cfg.llm?.model ?? 'llava'
@@ -120,11 +168,11 @@ async function withOllama(plantId: number): Promise<CarePlanResult> {
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: OpenAIContent = []
-  content.push({ type: 'text', text: buildUserPrompt(plant, detail) })
+  content.push({ type: 'text', text: buildUserPrompt(plant, detail, opb, photoCount) })
   for (const photo of detail!.photos) {
     const { data, mime } = photoBase64(photo)
     content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } })
-    if (content.length >= 6) break
+    if (content.length > photoCount) break
   }
   const res = await client.chat.completions.create({
     model,
@@ -136,7 +184,7 @@ async function withOllama(plantId: number): Promise<CarePlanResult> {
   return { provider: 'ollama', model, plan: res.choices[0]?.message?.content ?? '', generatedAt: Date.now() }
 }
 
-async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
+async function withLiteLLM(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
   const cfg = getConfig()
   const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
   const model = cfg.llm?.model ?? 'gpt-4o-mini'
@@ -146,11 +194,11 @@ async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
   const detail = await getPlantDetail(plantId)
   const plant = detail!.plant
   const content: OpenAIContent = []
-  content.push({ type: 'text', text: buildUserPrompt(plant, detail) })
+  content.push({ type: 'text', text: buildUserPrompt(plant, detail, opb, photoCount) })
   for (const photo of detail!.photos) {
     const { data, mime } = photoBase64(photo)
     content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } })
-    if (content.length >= 8) break
+    if (content.length > photoCount) break
   }
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
@@ -177,16 +225,18 @@ async function withLiteLLM(plantId: number): Promise<CarePlanResult> {
   return { provider: 'litellm', model, plan: String(text), generatedAt: Date.now() }
 }
 
-export async function generateCarePlan(plantId: number, provider?: LlmProvider): Promise<CarePlanResult> {
+export async function generateCarePlan(plantId: number, provider?: LlmProvider, photoCount: number = 4): Promise<CarePlanResult> {
   const cfg = getConfig()
   const selected = provider ?? cfg.llm?.provider ?? 'ollama'
   if (!cfg.llm?.apiKey && selected !== 'ollama') {
     throw new Error(`Brak klucza API dla providera ${selected}. Skonfiguruj go w ustawieniach.`)
   }
-  if (selected === 'anthropic') return withAnthropic(plantId)
-  if (selected === 'openai') return withOpenAi(plantId)
-  if (selected === 'litellm') return withLiteLLM(plantId)
-  return withOllama(plantId)
+  const detail = await getPlantDetail(plantId)
+  const opb = detail?.plant?.scientificName ? await getOpbInfo(detail.plant.scientificName) : null
+  if (selected === 'anthropic') return withAnthropic(plantId, photoCount, opb)
+  if (selected === 'openai') return withOpenAi(plantId, photoCount, opb)
+  if (selected === 'litellm') return withLiteLLM(plantId, photoCount, opb)
+  return withOllama(plantId, photoCount, opb)
 }
 
 export async function generateCarePlanWithContext(plantId: number, provider?: LlmProvider): Promise<{ plan: CarePlanResult; context: unknown }> {

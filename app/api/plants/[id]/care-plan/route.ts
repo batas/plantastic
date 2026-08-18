@@ -9,8 +9,9 @@ export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]
   const plant = await getPlant(plantId)
   if (!plant) return NextResponse.json({ error: 'Nie znaleziono rośliny' }, { status: 404 })
   const body = await request.json().catch(() => ({}))
+  const photoCount = body.diagnosis ? 8 : 4
   try {
-    const result = await generateCarePlan(plantId, body.provider)
+    const result = await generateCarePlan(plantId, body.provider, photoCount)
     await addTimelineEntry(plantId, {
       kind: 'care_plan',
       title: `Plan pielęgnacji (${result.provider}: ${result.model})`,
