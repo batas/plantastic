@@ -57,8 +57,15 @@ function parseJson<T>(text: string): T {
   const cleaned = text.replace(/```json|```/g, '').trim()
   const start = cleaned.indexOf('{')
   const end = cleaned.lastIndexOf('}')
-  if (start === -1 || end === -1) throw new Error('LLM nie zwrócił poprawnego JSON')
-  return JSON.parse(cleaned.slice(start, end + 1)) as T
+  if (start === -1 || end === -1) {
+    throw new Error(`LLM nie zwrócił poprawnego JSON. Odpowiedź: "${text.slice(0, 500)}"`)
+  }
+  const jsonStr = cleaned.slice(start, end + 1)
+  try {
+    return JSON.parse(jsonStr) as T
+  } catch (e) {
+    throw new Error(`Błąd parsowania JSON od LLM: ${e instanceof Error ? e.message : e}. Surowy tekst: "${jsonStr.slice(0, 500)}"`)
+  }
 }
 
 async function callVision(prompt: string, images: { data: string; mime: string }[]): Promise<string> {

@@ -18,6 +18,7 @@ export async function POST(_request: Request, ctx: RouteContext<'/api/plants/[id
     return NextResponse.json({ ok: true, verdict })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Błąd przeglądu stanu'
+    console.error('[health]', err)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

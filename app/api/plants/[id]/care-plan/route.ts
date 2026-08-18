@@ -21,6 +21,7 @@ export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]
     return NextResponse.json({ ok: true, plan: result.plan, provider: result.provider, model: result.model })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Błąd generowania planu'
+    console.error('[care-plan]', err)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
