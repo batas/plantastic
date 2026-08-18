@@ -1,8 +1,10 @@
 import { getConfig } from '@/lib/settings'
 import { listPlants } from './plants'
-import { getHaSensorMappings, recordReading } from './sensors'
+import { getHaSensorMappings, getAllDeviceMappings, recordReading } from './sensors'
 import { isConnected, publishDiscovery, publishCareStatus } from '@/lib/mqtt'
-import { getState } from '@/lib/ha'
+import { getState, getEntityRegistry, getDevicesWithSensors } from '@/lib/ha'
+
+const DEVICE_CLASS_METRIC: Record<string, string> = { humidity: 'moisture', moisture: 'moisture', temperature: 'temperature' }
 
 let started = false
 
@@ -32,10 +34,38 @@ export function runReminderWorker() {
   interval.unref()
 }
 
+interface TopicMapping { plantId: number; topic: string; metric: string }
+
 async function pollHaSensors() {
-  const mappings = await getHaSensorMappings()
-  if (mappings.length === 0) return
-  for (const m of mappings) {
+  const entityMappings = await getHaSensorMappings()
+  const effective: TopicMapping[] = [...entityMappings]
+
+  const deviceMap = getAllDeviceMappings()
+  if (deviceMap.length > 0) {
+    const deviceIds = [...new Set(deviceMap.map((d) => d.haDeviceId))]
+    const deviceEntities = new Map<string, { plantId: number; deviceName: string | null }>()
+    for (const d of deviceMap) deviceEntities.set(d.haDeviceId, { plantId: d.plantId, deviceName: d.deviceName })
+
+    const [entityRegistry, devicesWithSensors] = await Promise.all([
+      getEntityRegistry(),
+      getDevicesWithSensors(),
+    ])
+
+    const stateMap = new Map(devicesWithSensors.flatMap((d) => d.sensors.map((s) => [s.entity_id, s])))
+
+    for (const entity of entityRegistry) {
+      if (!entity.device_id || !deviceEntities.has(entity.device_id)) continue
+      const state = stateMap.get(entity.entity_id)
+      const dc = state?.device_class
+      const metric = dc ? DEVICE_CLASS_METRIC[dc] : null
+      if (!metric) continue
+      const { plantId } = deviceEntities.get(entity.device_id)!
+      effective.push({ plantId, topic: entity.entity_id, metric })
+    }
+  }
+
+  if (effective.length === 0) return
+  for (const m of effective) {
     const state = await getState(m.topic)
     if (!state) continue
     const value = Number(state.state)
