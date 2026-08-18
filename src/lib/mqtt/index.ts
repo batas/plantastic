@@ -1,8 +1,13 @@
 import mqtt, { type MqttClient, type IClientOptions } from 'mqtt'
-import { getConfig, maskSecret } from '@/lib/settings'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { desc, eq } from 'drizzle-orm'
+import { getConfig, getPhotosDir, maskSecret } from '@/lib/settings'
+import { db } from '@/lib/db'
+import { photos } from '@/lib/db/schema'
 import { getPlant, getNextCareDates } from '@/lib/services/plants'
 import { logCare, normalizeCareKind } from '@/lib/services/care'
-import { CARE_TYPES, CARE_META } from '@/lib/care-types'
+import { CARE_TYPES, CARE_META, type CareType } from '@/lib/care-types'
 
 const g = globalThis as unknown as { __mqttClient?: MqttClient | null; __mqttListeners?: Array<(connected: boolean) => void>; __mqttSubscribed?: Set<string>; __mqttLastPublish?: Record<string, number> }
 if (!g.__mqttClient) g.__mqttClient = null
@@ -79,6 +84,7 @@ export async function connectMqtt() {
         console.log(`[mqtt] cmd: plant=${plantId} kind=${kind}`)
         await logCare(plantId, kind)
         await publishCareStatus(plantId)
+        await publishLastCare(plantId, kind)
         if (kind === 'water') await publishWatered(plantId)
       }
       return
@@ -104,15 +110,6 @@ export async function refreshSubscriptions() {
   }
 }
 
-function slugify(s: string) {
-  return s
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '')
-}
-
 function publish(topic: string, value: string, opts?: { retain?: boolean; force?: boolean }) {
   if (!getClient()?.connected) return
   const now = Date.now()
@@ -130,6 +127,33 @@ export async function publishWatered(plantId: number) {
   const plant = await getPlant(plantId)
   if (!plant) return
   publish(`home/plants/${plantId}/last_watered`, String(Math.floor(Date.now() / 1000)), { force: true })
+}
+
+const LAST_CARE_LABELS: Record<string, string> = {
+  water: 'ostatnie podlewanie',
+  fertilize: 'ostatnie nawożenie',
+  mist: 'ostatnie zraszanie',
+  clean: 'ostatnie czyszczenie',
+  rotate: 'ostatnie obracanie',
+}
+
+export async function publishLastCare(plantId: number, kind: CareType) {
+  publish(`home/plants/${plantId}/last_${kind}`, String(Math.floor(Date.now() / 1000)), { force: true })
+}
+
+export async function publishPhoto(plantId: number) {
+  const c = getClient()
+  if (!c?.connected) return
+  const row = db.select().from(photos).where(eq(photos.plantId, plantId)).orderBy(desc(photos.createdAt)).limit(1).get()
+  if (!row) return
+  const dir = getPhotosDir()
+  const filePath = path.join(dir, row.thumbPath ?? row.path)
+  try {
+    const buf = readFileSync(filePath)
+    c.publish(`home/plants/${plantId}/photo`, buf, { retain: true })
+  } catch (err) {
+    console.error('[mqtt] photo read error:', filePath, err)
+  }
 }
 
 export async function publishCareStatus(plantId: number) {
@@ -174,7 +198,6 @@ export async function publishDiscovery(plantId: number) {
   const plant = await getPlant(plantId)
   if (!plant) return
   const objId = `plant_${plantId}`
-  const name = slugify(plant.name) || `plant${plantId}`
   const device = {
     identifiers: [`plants_${objId}`],
     name: plant.name,
@@ -184,6 +207,13 @@ export async function publishDiscovery(plantId: number) {
   const mk = (component: string, suffix: string, cfg: Record<string, unknown>) =>
     c.publish(`homeassistant/${component}/${objId}_${suffix}/config`, JSON.stringify(cfg), { retain: true })
 
+  mk('camera', 'photo', {
+    name: `${plant.name} zdjęcie`,
+    unique_id: `plants_${objId}_photo`,
+    topic: `home/plants/${plantId}/photo`,
+    device,
+  })
+
   mk('sensor', 'last_watered', {
     name: `${plant.name} ostatnie podlewanie`,
     unique_id: `plants_${objId}_last_watered`,
@@ -192,6 +222,19 @@ export async function publishDiscovery(plantId: number) {
     value_template: '{{ (value | int) | timestamp_local }}',
     device,
   })
+
+  for (const type of CARE_TYPES) {
+    if (type === 'water') continue
+    mk('sensor', `last_${type}`, {
+      name: `${plant.name} ${LAST_CARE_LABELS[type]}`,
+      unique_id: `plants_${objId}_last_${type}`,
+      state_topic: `home/plants/${plantId}/last_${type}`,
+      device_class: 'timestamp',
+      value_template: '{{ (value | int) | timestamp_local }}',
+      device,
+    })
+  }
+
   mk('sensor', 'moisture', {
     name: `${plant.name} wilgotność`,
     unique_id: `plants_${objId}_moisture`,
@@ -214,6 +257,38 @@ export async function publishDiscovery(plantId: number) {
     unit_of_measurement: 'lx',
     device,
   })
+
+  if (plant.species) {
+    mk('sensor', 'species', {
+      name: `${plant.name} gatunek`,
+      unique_id: `plants_${objId}_species`,
+      state_topic: `home/plants/${plantId}/species`,
+      entity_category: 'diagnostic',
+      device,
+    })
+    publish(`home/plants/${plantId}/species`, plant.species)
+  }
+  if (plant.location) {
+    mk('sensor', 'location', {
+      name: `${plant.name} lokalizacja`,
+      unique_id: `plants_${objId}_location`,
+      state_topic: `home/plants/${plantId}/location`,
+      entity_category: 'config',
+      device,
+    })
+    publish(`home/plants/${plantId}/location`, plant.location)
+  }
+  if (plant.notes) {
+    mk('sensor', 'notes', {
+      name: `${plant.name} notatki`,
+      unique_id: `plants_${objId}_notes`,
+      state_topic: `home/plants/${plantId}/notes`,
+      entity_category: 'diagnostic',
+      device,
+    })
+    publish(`home/plants/${plantId}/notes`, plant.notes)
+  }
+
   for (const type of CARE_TYPES) {
     mk('binary_sensor', `${type}_due`, {
       name: `${plant.name} ${CARE_META[type].label}`,
@@ -225,5 +300,6 @@ export async function publishDiscovery(plantId: number) {
       device,
     })
   }
-  void name
+
+  await publishPhoto(plantId)
 }

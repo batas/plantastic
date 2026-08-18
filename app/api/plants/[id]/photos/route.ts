@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { savePhoto } from '@/lib/services/photos'
 import { getPlant } from '@/lib/services/plants'
+import { publishPhoto } from '@/lib/mqtt'
 
 export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]/photos'>) {
   const { id } = await ctx.params
@@ -13,9 +14,10 @@ export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]
   const addToTimeline = form.get('addToTimeline') !== 'false'
   try {
     const photoId = await savePhoto({ plantId, file, caption, addToTimeline })
+    await publishPhoto(plantId)
     return NextResponse.json({ id: photoId }, { status: 201 })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Błąd dodawania zdjęcia'
+    const msg = err instanceof Error ? err.message : 'Błąd dodawania zdjęć'
     return NextResponse.json({ error: msg }, { status: 400 })
   }
 }

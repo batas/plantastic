@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { logCare, normalizeCareKind } from '@/lib/services/care'
 import { getPlant } from '@/lib/services/plants'
-import { publishWatered, publishCareStatus } from '@/lib/mqtt'
+import { publishWatered, publishCareStatus, publishLastCare } from '@/lib/mqtt'
 
 export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]/care'>) {
   const { id } = await ctx.params
@@ -18,6 +18,7 @@ export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]
     body.notes ? String(body.notes) : undefined,
   )
   if (kind === 'water') await publishWatered(plantId)
+  await publishLastCare(plantId, kind)
   await publishCareStatus(plantId)
   return NextResponse.json({ ok: true })
 }
