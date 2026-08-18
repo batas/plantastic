@@ -80,20 +80,28 @@ export default function PlantDetailClient({
   const [topic, setTopic] = useState("")
   const [metric, setMetric] = useState("moisture")
   const [mappingMode, setMappingMode] = useState<"device" | "entity">("device")
-  const [haEntities, setHaEntities] = useState<{ entity_id: string; state: string; friendly_name: string | null }[]>([])
-  const [haDevices, setHaDevices] = useState<{ device: { id: string; name: string | null; manufacturer: string | null; model: string | null }; sensors: { entity_id: string; device_class: string | null; state: string; unit: string | null }[] }[]>([])
+  const [haEntities, setHaEntities] = useState<{ entity_id: string; state: string; friendly_name: string | null; area: string | null }[]>([])
+  const [haDevices, setHaDevices] = useState<{ device: { id: string; name: string | null; manufacturer: string | null; model: string | null; area_name?: string | null }; sensors: { entity_id: string; device_class: string | null; state: string; unit: string | null }[] }[]>([])
   const [deviceFilter, setDeviceFilter] = useState("")
+  const [areaFilter, setAreaFilter] = useState("")
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [topicError, setTopicError] = useState("")
   const [sensorSuccess, setSensorSuccess] = useState("")
 
   const filteredHaDevices = haDevices.filter(
-    (d) =>
-      !deviceFilter ||
-      d.device.name?.toLowerCase().includes(deviceFilter.toLowerCase()) ||
-      d.device.manufacturer?.toLowerCase().includes(deviceFilter.toLowerCase()) ||
-      d.device.id.toLowerCase().includes(deviceFilter.toLowerCase()),
+    (d) => {
+      const matchesFilter = !deviceFilter ||
+        d.device.name?.toLowerCase().includes(deviceFilter.toLowerCase()) ||
+        d.device.manufacturer?.toLowerCase().includes(deviceFilter.toLowerCase()) ||
+        d.device.id.toLowerCase().includes(deviceFilter.toLowerCase())
+      const matchesArea = areaFilter === "" || d.device.area_name === areaFilter
+      return matchesFilter && matchesArea
+    }
   )
+
+  const uniqueAreas = [...new Set(
+    haDevices.map((d) => d.device.area_name).filter((a): a is string => !!a),
+  )].sort()
 
   async function logCare(kind: CareType) {
     setBusyCare(kind)
@@ -511,6 +519,16 @@ export default function PlantDetailClient({
                       onChange={(e) => setDeviceFilter(e.target.value)}
                     />
                   </div>
+                  {uniqueAreas.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-zinc-500">Obszar:</label>
+                       <select value={areaFilter ?? ""} onChange={(e) => setAreaFilter(e.target.value)} className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800">
+                        <option value="">Wszystkie</option>
+                        {uniqueAreas.map((a) => <option key={a} value={a}>{a}</option>)}
+                      </select>
+                      {areaFilter && <button type="button" onClick={() => setAreaFilter("")} className="text-xs text-zinc-400 hover:text-zinc-600">wyczyść</button>}
+                    </div>
+                  )}
                   {filteredHaDevices.length === 0 && <p className="px-2 py-1 text-xs text-zinc-400">Brak wyników</p>}
                   {filteredHaDevices.map((d) => (
                     <button key={d.device.id} type="button" onClick={() => addDeviceMappings(d)} className="flex w-full flex-col gap-1 rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
@@ -518,6 +536,7 @@ export default function PlantDetailClient({
                         <span className="font-medium">{d.device.name ?? d.device.model ?? d.device.id}</span>
                         <span className="text-xs text-zinc-400">{d.sensors.length} czujników</span>
                       </div>
+                      {d.device.area_name && <span className="text-xs text-zinc-400">{d.device.area_name}</span>}
                       <div className="flex flex-wrap gap-1">
                         {d.sensors.map((s) => (
                           <span key={s.entity_id} className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">

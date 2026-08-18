@@ -25,6 +25,7 @@ interface HaEntity {
   state: string
   unit: string | null
   friendly_name: string | null
+  area: string | null
 }
 
 interface HaDeviceSensor {
@@ -36,7 +37,7 @@ interface HaDeviceSensor {
 }
 
 interface HaDevice {
-  device: { id: string; name: string | null; manufacturer: string | null; model: string | null }
+  device: { id: string; name: string | null; manufacturer: string | null; model: string | null; area_name?: string | null }
   sensors: HaDeviceSensor[]
 }
 
@@ -66,6 +67,7 @@ export default function SettingsClient({
   const [pickerLoading, setPickerLoading] = useState(false)
   const [pickerError, setPickerError] = useState<string | null>(null)
   const [pickerSearch, setPickerSearch] = useState("")
+  const [areaFilter, setAreaFilter] = useState("")
 
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -226,11 +228,24 @@ export default function SettingsClient({
   }
 
   const filteredHa = haEntities.filter(
-    (e) => pickerSearch === "" || e.entity_id.toLowerCase().includes(pickerSearch.toLowerCase()) || (e.friendly_name && e.friendly_name.toLowerCase().includes(pickerSearch.toLowerCase()))
+    (e) => {
+      const matchesSearch = pickerSearch === "" || e.entity_id.toLowerCase().includes(pickerSearch.toLowerCase()) || (e.friendly_name && e.friendly_name.toLowerCase().includes(pickerSearch.toLowerCase()))
+      const matchesArea = areaFilter === "" || e.area === areaFilter
+      return matchesSearch && matchesArea
+    }
   )
   const filteredDevices = haDevices.filter(
-    (d) => pickerSearch === "" || (d.device.name && d.device.name.toLowerCase().includes(pickerSearch.toLowerCase())) || (d.device.manufacturer && d.device.manufacturer.toLowerCase().includes(pickerSearch.toLowerCase()))
+    (d) => {
+      const matchesSearch = pickerSearch === "" || (d.device.name && d.device.name.toLowerCase().includes(pickerSearch.toLowerCase())) || (d.device.manufacturer && d.device.manufacturer.toLowerCase().includes(pickerSearch.toLowerCase()))
+      const matchesArea = areaFilter === "" || d.device.area_name === areaFilter
+      return matchesSearch && matchesArea
+    }
   )
+
+  const uniqueAreas = [...new Set([
+    ...haDevices.map((d) => d.device.area_name).filter((a): a is string => !!a),
+    ...haEntities.map((e) => e.area).filter((a): a is string => !!a),
+  ])].sort()
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -390,6 +405,16 @@ export default function SettingsClient({
             </div>
             {pickerLoading && <p className="mt-1 text-xs text-zinc-400">Ładowanie encji z HA...</p>}
             {pickerError && <p className="mt-1 text-xs text-red-600">{pickerError}</p>}
+            {!pickerLoading && haEntities.length > 0 && uniqueAreas.length > 0 && (
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-xs text-zinc-500">Obszar:</label>
+                <select value={areaFilter ?? ""} onChange={(e) => setAreaFilter(e.target.value)} className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800">
+                  <option value="">Wszystkie</option>
+                  {uniqueAreas.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+                {areaFilter && <button type="button" onClick={() => setAreaFilter("")} className="text-xs text-zinc-400 hover:text-zinc-600">wyczyść</button>}
+              </div>
+            )}
             {!pickerLoading && haEntities.length > 0 && (
               <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
                 {filteredHa.length === 0 && <p className="px-3 py-3 text-sm text-zinc-400">Brak wyników dla &quot;{pickerSearch}&quot;</p>}
@@ -442,6 +467,16 @@ export default function SettingsClient({
             </div>
             {pickerLoading && <p className="mt-1 text-xs text-zinc-400">Ładowanie urządzeń z HA...</p>}
             {pickerError && <p className="mt-1 text-xs text-red-600">{pickerError}</p>}
+            {!pickerLoading && haDevices.length > 0 && uniqueAreas.length > 0 && (
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-xs text-zinc-500">Obszar:</label>
+                <select value={areaFilter ?? ""} onChange={(e) => setAreaFilter(e.target.value)} className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800">
+                  <option value="">Wszystkie</option>
+                  {uniqueAreas.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+                {areaFilter && <button type="button" onClick={() => setAreaFilter("")} className="text-xs text-zinc-400 hover:text-zinc-600">wyczyść</button>}
+              </div>
+            )}
             {!pickerLoading && haDevices.length > 0 && (
               <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
                 {filteredDevices.length === 0 && <p className="px-3 py-3 text-sm text-zinc-400">Brak wyników dla &quot;{pickerSearch}&quot;</p>}
@@ -459,6 +494,7 @@ export default function SettingsClient({
                       ))}
                     </div>
                     {d.device.manufacturer && <span className="text-xs text-zinc-400">{d.device.manufacturer}{d.device.model ? ` · ${d.device.model}` : ""}</span>}
+                    {d.device.area_name && <span className="text-xs text-zinc-400">{d.device.area_name}</span>}
                   </button>
                 ))}
                 <p className="px-3 py-1.5 text-center text-xs text-zinc-400">{filteredDevices.length} z {haDevices.length} urządzeń</p>

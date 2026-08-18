@@ -82,15 +82,23 @@ export interface HaDevice {
   name: string | null
   manufacturer: string | null
   model: string | null
+  area_id: string | null
+  area_name?: string | null
+}
+
+export interface HaArea {
+  area_id: string
+  name: string
 }
 
 export interface HaEntityRegistryEntry {
   entity_id: string
   device_id: string | null
   disabled_by: string | null
+  area_id: string | null
 }
 
-const ALLOWED_SENSOR_CLASSES = new Set(['humidity', 'temperature'])
+const ALLOWED_SENSOR_CLASSES = new Set(['humidity', 'temperature', 'moisture'])
 
 export async function getDevices(): Promise<HaDevice[]> {
   try {
@@ -99,6 +107,17 @@ export async function getDevices(): Promise<HaDevice[]> {
     return devices
   } catch (err) {
     console.error('[ha] getDevices WS error:', err)
+    return []
+  }
+}
+
+export async function getAreas(): Promise<HaArea[]> {
+  try {
+    const areas = await wsCommand<HaArea[]>('config/area_registry/list')
+    console.log(`[ha] getAreas: ${areas.length} areas`)
+    return areas
+  } catch (err) {
+    console.error('[ha] getAreas WS error:', err)
     return []
   }
 }
@@ -120,20 +139,21 @@ export interface HaDeviceWithSensors {
 }
 
 export async function getDevicesWithSensors(): Promise<HaDeviceWithSensors[]> {
-  const [devices, entityRegistry, states] = await Promise.all([
+  const [devices, entityRegistry, states, areas] = await Promise.all([
     getDevices(),
     getEntityRegistry(),
     getStates('sensor'),
+    getAreas(),
   ])
 
-  console.log(`[ha] getDevicesWithSensors: devices=${devices.length} entityRegistry=${entityRegistry.length} states=${states.length}`)
+  console.log(`[ha] getDevicesWithSensors: devices=${devices.length} entityRegistry=${entityRegistry.length} states=${states.length} areas=${areas.length}`)
 
   const stateMap = new Map(states.map((s) => [s.entity_id, s]))
+  const areaMap = new Map(areas.map((a) => [a.area_id, a.name]))
 
   const sensorEntities = entityRegistry.filter(
     (e) =>
       e.entity_id.startsWith('sensor.') &&
-      e.device_id &&
       (e.disabled_by == null) &&
       (() => {
         const dc = stateMap.get(e.entity_id)?.attributes.device_class
@@ -141,17 +161,22 @@ export async function getDevicesWithSensors(): Promise<HaDeviceWithSensors[]> {
       })(),
   )
 
-  console.log(`[ha] getDevicesWithSensors: sensorEntities with device_id=${sensorEntities.length}`)
+  console.log(`[ha] getDevicesWithSensors: sensorEntities (with device_id) =${sensorEntities.filter(e => e.device_id).length}, without device_id=${sensorEntities.filter(e => !e.device_id).length}`)
 
+  // Group by device_id
   const byDevice = new Map<string, HaDeviceWithSensors>()
   for (const entity of sensorEntities) {
+    if (!entity.device_id) continue
     const state = stateMap.get(entity.entity_id)
     if (!state) continue
-    const deviceId = entity.device_id!
+    const deviceId = entity.device_id
     if (!byDevice.has(deviceId)) {
       const dev = devices.find((d) => d.id === deviceId)
       if (!dev) continue
-      byDevice.set(deviceId, { device: dev, sensors: [] })
+      byDevice.set(deviceId, {
+        device: { ...dev, area_name: dev.area_id ? areaMap.get(dev.area_id) ?? null : null },
+        sensors: [],
+      })
     }
     byDevice.get(deviceId)!.sensors.push({
       entity_id: entity.entity_id,
@@ -159,6 +184,31 @@ export async function getDevicesWithSensors(): Promise<HaDeviceWithSensors[]> {
       state: state.state,
       unit: (state.attributes.unit_of_measurement as string) ?? null,
       friendly_name: (state.attributes.friendly_name as string) ?? null,
+    })
+  }
+
+  // Also include standalone sensors (no device_id) as individual entries
+  for (const entity of sensorEntities) {
+    if (entity.device_id) continue
+    const state = stateMap.get(entity.entity_id)
+    if (!state) continue
+    const areaId = entity.area_id
+    const areaName = areaId ? (areaMap.get(areaId) ?? null) : null
+    // Create a virtual "device" from the entity name
+    const friendlyName = (state.attributes.friendly_name as string) ?? entity.entity_id
+    const virtualId = `standalone:${entity.entity_id}`
+    if (!byDevice.has(virtualId)) {
+      byDevice.set(virtualId, {
+        device: { id: virtualId, name: friendlyName, manufacturer: null, model: null, area_id: areaId, area_name: areaName },
+        sensors: [],
+      })
+    }
+    byDevice.get(virtualId)!.sensors.push({
+      entity_id: entity.entity_id,
+      device_class: (state.attributes.device_class as string) ?? null,
+      state: state.state,
+      unit: (state.attributes.unit_of_measurement as string) ?? null,
+      friendly_name: friendlyName,
     })
   }
 
