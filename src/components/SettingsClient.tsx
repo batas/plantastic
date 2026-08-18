@@ -27,6 +27,19 @@ interface HaEntity {
   friendly_name: string | null
 }
 
+interface HaDeviceSensor {
+  entity_id: string
+  device_class: string | null
+  state: string
+  unit: string | null
+  friendly_name: string | null
+}
+
+interface HaDevice {
+  device: { id: string; name: string | null; manufacturer: string | null; model: string | null }
+  sensors: HaDeviceSensor[]
+}
+
 export default function SettingsClient({
   initial,
 }: {
@@ -47,7 +60,9 @@ export default function SettingsClient({
   const [newMapping, setNewMapping] = useState({ plantId: "", topic: "", metric: "moisture" })
   const [testResult, setTestResult] = useState<{ type: string; ok: boolean; message: string; details?: string } | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
+  const [mappingMode, setMappingMode] = useState<"device" | "entity">("device")
   const [haEntities, setHaEntities] = useState<HaEntity[]>([])
+  const [haDevices, setHaDevices] = useState<HaDevice[]>([])
   const [pickerLoading, setPickerLoading] = useState(false)
   const [pickerError, setPickerError] = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -104,19 +119,9 @@ export default function SettingsClient({
     setSaved(false)
     try {
       const body: Record<string, unknown> = {
-        mqtt: {
-          host: cfg.mqtt.host,
-          port: cfg.mqtt.port,
-          user: cfg.mqtt.user,
-        },
-        ha: {
-          url: cfg.ha.url,
-        },
-        llm: {
-          provider: cfg.llm.provider,
-          model: cfg.llm.model,
-          baseUrl: cfg.llm.baseUrl,
-        },
+        mqtt: { host: cfg.mqtt.host, port: cfg.mqtt.port, user: cfg.mqtt.user },
+        ha: { url: cfg.ha.url },
+        llm: { provider: cfg.llm.provider, model: cfg.llm.model, baseUrl: cfg.llm.baseUrl },
         opb: {},
       }
       if (pw) body.mqtt = { ...(body.mqtt as object), password: pw }
@@ -124,16 +129,8 @@ export default function SettingsClient({
       if (apiKey) body.llm = { ...(body.llm as object), apiKey }
       if (opbClientId) body.opb = { ...(body.opb as object), clientId: opbClientId }
       if (opbSecret) body.opb = { ...(body.opb as object), secret: opbSecret }
-      await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      setPw("")
-      setHaToken("")
-      setApiKey("")
-      setOpbClientId("")
-      setOpbSecret("")
+      await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      setPw(""); setHaToken(""); setApiKey(""); setOpbClientId(""); setOpbSecret("")
       setSaved(true)
       await load()
     } finally {
@@ -146,9 +143,27 @@ export default function SettingsClient({
     await fetch("/api/sensors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plantId: Number(newMapping.plantId), topic: newMapping.topic, metric: newMapping.metric, source: "ha" }),
+      body: JSON.stringify({ plantId: Number(newMapping.plantId), topic: newMapping.topic, metric: newMapping.metric }),
     })
     setNewMapping({ plantId: "", topic: "", metric: "moisture" })
+    await load()
+    router.refresh()
+  }
+
+  async function addDeviceMappings(device: HaDevice) {
+    if (!newMapping.plantId) return
+    const metricMap: { [key: string]: string } = { humidity: "moisture", temperature: "temperature" }
+    const payload = device.sensors
+      .filter((s) => s.device_class && metricMap[s.device_class])
+      .map((s) => ({ topic: s.entity_id, metric: metricMap[s.device_class!] }))
+    if (payload.length === 0) return
+    await fetch("/api/sensors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plantId: Number(newMapping.plantId), mappings: payload }),
+    })
+    setShowPicker(false)
+    setPickerSearch("")
     await load()
     router.refresh()
   }
@@ -163,15 +178,26 @@ export default function SettingsClient({
     setPickerError(null)
     try {
       const res = await fetch("/api/ha/entities?domain=sensor")
-      if (!res.ok) {
-        const data = await res.json()
-        setPickerError(data.error ?? `Błąd ${res.status}`)
-        return
-      }
+      if (!res.ok) { setPickerError((await res.json()).error ?? `Błąd ${res.status}`); return }
       setHaEntities(await res.json())
       setShowPicker(true)
     } catch {
       setPickerError("Nie udało się pobrać encji z HA")
+    } finally {
+      setPickerLoading(false)
+    }
+  }
+
+  async function fetchHaDevices() {
+    setPickerLoading(true)
+    setPickerError(null)
+    try {
+      const res = await fetch("/api/ha/devices")
+      if (!res.ok) { setPickerError((await res.json()).error ?? `Błąd ${res.status}`); return }
+      setHaDevices(await res.json())
+      setShowPicker(true)
+    } catch {
+      setPickerError("Nie udało się pobrać urządzeń z HA")
     } finally {
       setPickerLoading(false)
     }
@@ -184,10 +210,10 @@ export default function SettingsClient({
   }
 
   const filteredHa = haEntities.filter(
-    (e) =>
-      pickerSearch === "" ||
-      e.entity_id.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-      (e.friendly_name && e.friendly_name.toLowerCase().includes(pickerSearch.toLowerCase()))
+    (e) => pickerSearch === "" || e.entity_id.toLowerCase().includes(pickerSearch.toLowerCase()) || (e.friendly_name && e.friendly_name.toLowerCase().includes(pickerSearch.toLowerCase()))
+  )
+  const filteredDevices = haDevices.filter(
+    (d) => pickerSearch === "" || (d.device.name && d.device.name.toLowerCase().includes(pickerSearch.toLowerCase())) || (d.device.manufacturer && d.device.manufacturer.toLowerCase().includes(pickerSearch.toLowerCase()))
   )
 
   return (
@@ -250,11 +276,7 @@ export default function SettingsClient({
         <div className="space-y-4">
           <div>
             <label className={label}>LLM provider</label>
-            <select
-              className={input}
-              value={cfg.llm.provider}
-              onChange={(e) => setCfg((c) => ({ ...c, llm: { ...c.llm, provider: e.target.value } }))}
-            >
+            <select className={input} value={cfg.llm.provider} onChange={(e) => setCfg((c) => ({ ...c, llm: { ...c.llm, provider: e.target.value } }))}>
               <option value="ollama">Ollama (lokalnie)</option>
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
@@ -314,40 +336,59 @@ export default function SettingsClient({
 
       <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="mb-3 font-semibold">Mapowanie czujników z HA</h2>
+
+        <div className="mb-4 flex gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800">
+          <button type="button" onClick={() => { setMappingMode("device"); setShowPicker(false); setPickerSearch("") }} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${mappingMode === "device" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
+            Po urządzeniu
+          </button>
+          <button type="button" onClick={() => { setMappingMode("entity"); setShowPicker(false); setPickerSearch("") }} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${mappingMode === "entity" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
+            Pojedynczy czujnik
+          </button>
+        </div>
+
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-40 flex-1">
             <label className={label}>Roślina</label>
             <select className={input} value={newMapping.plantId} onChange={(e) => setNewMapping((m) => ({ ...m, plantId: e.target.value }))}>
               <option value="">— wybierz —</option>
               {plants.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
+                <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
           </div>
-          <div className="min-w-56 flex-1">
-            <label className={label}>Entity ID</label>
-            <div className="flex gap-2">
-              <input className={input + " flex-1"} placeholder="sensor.wilgotnosc" value={newMapping.topic} onChange={(e) => setNewMapping((m) => ({ ...m, topic: e.target.value }))} />
-              <button type="button" onClick={fetchHaEntities} disabled={pickerLoading} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-                {pickerLoading ? "Szukam..." : "Przeglądaj HA"}
-              </button>
+          {mappingMode === "entity" && (
+            <div className="min-w-56 flex-1">
+              <label className={label}>Entity ID</label>
+              <div className="flex gap-2">
+                <input className={input + " flex-1"} placeholder="sensor.wilgotnosc" value={newMapping.topic} onChange={(e) => setNewMapping((m) => ({ ...m, topic: e.target.value }))} />
+                <button type="button" onClick={fetchHaEntities} disabled={pickerLoading} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                  {pickerLoading ? "Szukam..." : "Przeglądaj"}
+                </button>
+              </div>
             </div>
-          </div>
-          <div>
-            <label className={label}>Metryka</label>
-            <select className={input} value={newMapping.metric} onChange={(e) => setNewMapping((m) => ({ ...m, metric: e.target.value }))}>
-              <option value="moisture">Wilgotność</option>
-              <option value="temperature">Temperatura</option>
-            </select>
-          </div>
-          <button onClick={addMapping} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-            Dodaj
-          </button>
+          )}
+          {mappingMode === "entity" && (
+            <div>
+              <label className={label}>Metryka</label>
+              <select className={input} value={newMapping.metric} onChange={(e) => setNewMapping((m) => ({ ...m, metric: e.target.value }))}>
+                <option value="moisture">Wilgotność</option>
+                <option value="temperature">Temperatura</option>
+              </select>
+            </div>
+          )}
+          {mappingMode === "entity" && (
+            <button onClick={addMapping} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+              Dodaj
+            </button>
+          )}
+          {mappingMode === "device" && (
+            <button onClick={() => { if (newMapping.plantId) fetchHaDevices() }} disabled={!newMapping.plantId || pickerLoading} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+              {pickerLoading ? "Szukam..." : "Przeglądaj urządzenia"}
+            </button>
+          )}
         </div>
 
-        {showPicker && (
+        {showPicker && mappingMode === "entity" && (
           <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-medium">Czujniki HA ({filteredHa.length})</h3>
@@ -364,6 +405,36 @@ export default function SettingsClient({
                 </button>
               ))}
               {filteredHa.length === 0 && <p className="text-sm text-zinc-400">Brak wyników.</p>}
+            </div>
+          </div>
+        )}
+
+        {showPicker && mappingMode === "device" && (
+          <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-medium">Urządzenia HA ({filteredDevices.length})</h3>
+              <button type="button" onClick={() => { setShowPicker(false); setPickerSearch("") }} className="text-xs text-zinc-500 hover:underline">zamknij</button>
+            </div>
+            <input className={input + " mb-2"} placeholder="Szukaj urządzenia..." value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} autoFocus />
+            {pickerError && <p className="mb-2 text-sm text-red-600">{pickerError}</p>}
+            <div className="max-h-64 space-y-2 overflow-y-auto">
+              {filteredDevices.map((d) => (
+                <button key={d.device.id} type="button" onClick={() => addDeviceMappings(d)} className="flex w-full flex-col gap-1 rounded-lg px-3 py-2 text-left text-sm hover:bg-white dark:hover:bg-zinc-700">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{d.device.name ?? d.device.model ?? d.device.id}</span>
+                    <span className="text-xs text-zinc-400">{d.sensors.length} czujników</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {d.sensors.map((s) => (
+                      <span key={s.entity_id} className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                        {s.device_class ?? s.entity_id.split(".").pop()} {s.state}{s.unit ? ` ${s.unit}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                  {d.device.manufacturer && <span className="text-xs text-zinc-400">{d.device.manufacturer}{d.device.model ? ` · ${d.device.model}` : ""}</span>}
+                </button>
+              ))}
+              {filteredDevices.length === 0 && <p className="text-sm text-zinc-400">Brak urządzeń z czujnikami.</p>}
             </div>
           </div>
         )}

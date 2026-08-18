@@ -79,7 +79,9 @@ export default function PlantDetailClient({
   const [noteText, setNoteText] = useState("")
   const [topic, setTopic] = useState("")
   const [metric, setMetric] = useState("moisture")
+  const [mappingMode, setMappingMode] = useState<"device" | "entity">("device")
   const [haEntities, setHaEntities] = useState<{ entity_id: string; state: string; friendly_name: string | null }[]>([])
+  const [haDevices, setHaDevices] = useState<{ device: { id: string; name: string | null; manufacturer: string | null; model: string | null }; sensors: { entity_id: string; device_class: string | null; state: string; unit: string | null }[] }[]>([])
   const [loadingTopics, setLoadingTopics] = useState(false)
   const [topicError, setTopicError] = useState("")
 
@@ -175,9 +177,23 @@ export default function PlantDetailClient({
     await fetch("/api/sensors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plantId: plant.id, topic: topic.trim(), metric, source: "ha" }),
+      body: JSON.stringify({ plantId: plant.id, topic: topic.trim(), metric }),
     })
     setTopic("")
+    router.refresh()
+  }
+
+  async function addDeviceMappings(device: { sensors: { entity_id: string; device_class: string | null }[] }) {
+    const metricMap: { [key: string]: string } = { humidity: "moisture", temperature: "temperature" }
+    const payload = device.sensors
+      .filter((s) => s.device_class && metricMap[s.device_class])
+      .map((s) => ({ topic: s.entity_id, metric: metricMap[s.device_class!] }))
+    if (payload.length === 0) return
+    await fetch("/api/sensors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plantId: plant.id, mappings: payload }),
+    })
     router.refresh()
   }
 
@@ -185,13 +201,17 @@ export default function PlantDetailClient({
     setLoadingTopics(true)
     setTopicError("")
     try {
-      const res = await fetch("/api/ha/entities?domain=sensor")
-      const data = await res.json()
-      if (!res.ok) {
-        setTopicError(data.error ?? "Nie udało się pobrać encji z HA")
-        return
+      if (mappingMode === "entity") {
+        const res = await fetch("/api/ha/entities?domain=sensor")
+        const data = await res.json()
+        if (!res.ok) { setTopicError(data.error ?? "Nie udało się pobrać encji z HA"); return }
+        setHaEntities(Array.isArray(data) ? data : [])
+      } else {
+        const res = await fetch("/api/ha/devices")
+        const data = await res.json()
+        if (!res.ok) { setTopicError(data.error ?? "Nie udało się pobrać urządzeń z HA"); return }
+        setHaDevices(Array.isArray(data) ? data : [])
       }
-      setHaEntities(Array.isArray(data) ? data : [])
     } catch {
       setTopicError("Błąd połączenia z HA")
     } finally {
@@ -412,26 +432,62 @@ export default function PlantDetailClient({
           </div>
           <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <p className="mb-2 text-xs text-zinc-400">Mapuj czujnik HA do tej rośliny</p>
+            <div className="mb-2 flex gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800">
+              <button type="button" onClick={() => { setMappingMode("device"); setTopic("") }} className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${mappingMode === "device" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
+                Urządzenie
+              </button>
+              <button type="button" onClick={() => { setMappingMode("entity"); setTopic("") }} className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${mappingMode === "entity" ? "bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"}`}>
+                Czujnik
+              </button>
+            </div>
             <div className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <input className={input + " flex-1"} placeholder="sensor.wilgotnosc" value={topic} onChange={(e) => setTopic(e.target.value)} list="sensor-topics" />
-                <button type="button" onClick={loadTopics} disabled={loadingTopics} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-                  {loadingTopics ? "..." : "Przeglądaj HA"}
+              {mappingMode === "entity" && (
+                <div className="flex gap-2">
+                  <input className={input + " flex-1"} placeholder="sensor.wilgotnosc" value={topic} onChange={(e) => setTopic(e.target.value)} list="sensor-topics" />
+                  <button type="button" onClick={loadTopics} disabled={loadingTopics} className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                    {loadingTopics ? "..." : "Przeglądaj"}
+                  </button>
+                </div>
+              )}
+              {mappingMode === "device" && (
+                <button type="button" onClick={loadTopics} disabled={loadingTopics} className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                  {loadingTopics ? "Szukam urządzeń..." : "Przeglądaj urządzenia HA"}
                 </button>
-              </div>
+              )}
               {topicError && <p className="text-xs text-red-600">{topicError}</p>}
               <datalist id="sensor-topics">
                 {haEntities.map((e) => <option key={e.entity_id} value={e.entity_id}>{e.friendly_name ?? e.entity_id} ({e.state})</option>)}
               </datalist>
-              <div className="flex gap-2">
-                <select className={input} value={metric} onChange={(e) => setMetric(e.target.value)}>
-                  <option value="moisture">Wilgotność</option>
-                  <option value="temperature">Temperatura</option>
-                </select>
-                <button onClick={addSensorMapping} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-                  Dodaj
-                </button>
-              </div>
+              {mappingMode === "entity" && (
+                <div className="flex gap-2">
+                  <select className={input} value={metric} onChange={(e) => setMetric(e.target.value)}>
+                    <option value="moisture">Wilgotność</option>
+                    <option value="temperature">Temperatura</option>
+                  </select>
+                  <button onClick={addSensorMapping} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                    Dodaj
+                  </button>
+                </div>
+              )}
+              {mappingMode === "device" && haDevices.length > 0 && (
+                <div className="space-y-1">
+                  {haDevices.map((d) => (
+                    <button key={d.device.id} type="button" onClick={() => addDeviceMappings(d)} className="flex w-full flex-col gap-1 rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{d.device.name ?? d.device.model ?? d.device.id}</span>
+                        <span className="text-xs text-zinc-400">{d.sensors.length} czujników</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {d.sensors.map((s) => (
+                          <span key={s.entity_id} className="rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                            {s.device_class ?? s.entity_id.split(".").pop()} {s.state}{s.unit ? ` ${s.unit}` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </section>

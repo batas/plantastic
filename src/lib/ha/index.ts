@@ -66,3 +66,91 @@ export async function getState(entityId: string): Promise<HaState | null> {
     return null
   }
 }
+
+export interface HaDevice {
+  id: string
+  name: string | null
+  manufacturer: string | null
+  model: string | null
+}
+
+export interface HaEntityRegistryEntry {
+  entity_id: string
+  device_id: string | null
+  device_class: string | null
+  original_name: string | null
+}
+
+const ALLOWED_SENSOR_CLASSES = new Set(['humidity', 'temperature'])
+
+export async function getDevices(): Promise<HaDevice[]> {
+  const cfg = getConfig()
+  const url = cfg.ha?.url
+  const token = cfg.ha?.token
+  if (!url || !token) return []
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, '')}/api/config/device_registry/list`, {
+      method: 'POST',
+      headers: getHeaders(token),
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) return []
+    return (await res.json()) as HaDevice[]
+  } catch {
+    return []
+  }
+}
+
+export async function getEntityRegistry(): Promise<HaEntityRegistryEntry[]> {
+  const cfg = getConfig()
+  const url = cfg.ha?.url
+  const token = cfg.ha?.token
+  if (!url || !token) return []
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, '')}/api/config/entity_registry/list`, {
+      method: 'POST',
+      headers: getHeaders(token),
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) return []
+    return (await res.json()) as HaEntityRegistryEntry[]
+  } catch {
+    return []
+  }
+}
+
+export interface HaDeviceWithSensors {
+  device: HaDevice
+  sensors: { entity_id: string; device_class: string | null; state: string; unit: string | null; friendly_name: string | null }[]
+}
+
+export async function getDevicesWithSensors(): Promise<HaDeviceWithSensors[]> {
+  const [devices, entityRegistry, states] = await Promise.all([getDevices(), getEntityRegistry(), getStates('sensor')])
+
+  const stateMap = new Map(states.map((s) => [s.entity_id, s]))
+
+  const sensorEntities = entityRegistry.filter(
+    (e) => e.entity_id.startsWith('sensor.') && e.device_id && (e.device_class == null || ALLOWED_SENSOR_CLASSES.has(e.device_class)),
+  )
+
+  const byDevice = new Map<string, HaDeviceWithSensors>()
+  for (const entity of sensorEntities) {
+    const state = stateMap.get(entity.entity_id)
+    if (!state) continue
+    const deviceId = entity.device_id!
+    if (!byDevice.has(deviceId)) {
+      const dev = devices.find((d) => d.id === deviceId)
+      if (!dev) continue
+      byDevice.set(deviceId, { device: dev, sensors: [] })
+    }
+    byDevice.get(deviceId)!.sensors.push({
+      entity_id: entity.entity_id,
+      device_class: entity.device_class,
+      state: state.state,
+      unit: (state.attributes.unit_of_measurement as string) ?? null,
+      friendly_name: (state.attributes.friendly_name as string) ?? null,
+    })
+  }
+
+  return [...byDevice.values()].filter((d) => d.sensors.length > 0)
+}
