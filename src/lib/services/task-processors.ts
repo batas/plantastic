@@ -1,6 +1,7 @@
 import { generateCarePlan } from '@/lib/llm'
 import { healthCheck } from '@/lib/llm/identify'
 import { addTimelineEntry } from '@/lib/services/care'
+import { updatePlant } from '@/lib/services/plants'
 import { updateTask } from '@/lib/services/tasks'
 import type { TaskType } from '@/lib/services/tasks'
 
@@ -20,6 +21,14 @@ async function processCarePlan(taskId: number, plantId: number) {
       content: result.plan,
       dataJson: JSON.stringify({ provider: result.provider, model: result.model, format: 'markdown' }),
     })
+
+    if (result.intervals) {
+      const patch: Record<string, number> = {}
+      for (const [k, v] of Object.entries(result.intervals)) {
+        if (typeof v === 'number' && v > 0) patch[k] = v
+      }
+      if (Object.keys(patch).length > 0) await updatePlant(plantId, patch)
+    }
 
     updateTask(taskId, {
       status: 'done',

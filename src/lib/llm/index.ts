@@ -13,6 +13,31 @@ export interface CarePlanResult {
   model: string
   plan: string
   generatedAt: number
+  intervals?: Record<string, number>
+}
+
+export function parseCareIntervals(planText: string): CarePlanResult['intervals'] | undefined {
+  const jsonMatch = planText.match(/```json\s*\n?(\{[\s\S]*?\})\s*\n?```/)
+  if (!jsonMatch) return undefined
+  try {
+    const parsed = JSON.parse(jsonMatch[1])
+    const keys = ['waterIntervalDays', 'fertilizeIntervalDays', 'mistIntervalDays', 'cleanIntervalDays', 'rotateIntervalDays'] as const
+    const intervals: Record<string, number> = {}
+    let found = false
+    for (const k of keys) {
+      if (k in parsed && typeof parsed[k] === 'number' && parsed[k] > 0) {
+        intervals[k] = Math.round(parsed[k])
+        found = true
+      }
+    }
+    return found ? intervals : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function stripJsonBlock(planText: string): string {
+  return planText.replace(/\n*---\s*\n*```json\s*\n?\{[\s\S]*?\}\s*\n?```?\s*$/m, '').trim()
 }
 
 type OpenAIContent = OpenAI.Chat.Completions.ChatCompletionContentPart[]
@@ -61,6 +86,19 @@ function buildSystemPrompt(): string {
     '',
     '## 🔎 Obserwować pod kątem',
     'Na co zwracać uwagę w najbliższych dniach. Symptomy alarmowe wymagające natychmiastowej reakcji.',
+    '',
+    '---',
+    'PO PLANIE OZACZ KONIECZNIE BLOK JSON Z INTERWAŁAMI W FORMACIE:',
+    '```json',
+    '{',
+    '  "waterIntervalDays": 7,',
+    '  "fertilizeIntervalDays": 30,',
+    '  "mistIntervalDays": 3,',
+    '  "cleanIntervalDays": 14,',
+    '  "rotateIntervalDays": 7',
+    '}',
+    '```',
+    'Wartości to liczba dni między zabiegami. null = brak zmiany. Bądź precyzyjny na podstawie analizy.',
   ].join('\n')
 }
 
@@ -277,10 +315,24 @@ export async function generateCarePlan(plantId: number, provider?: LlmProvider, 
   }
   const detail = await getPlantDetail(plantId)
   const opb = detail?.plant?.scientificName ? await getOpbInfo(detail.plant.scientificName) : null
-  if (selected === 'anthropic') return withAnthropic(plantId, photoCount, opb)
-  if (selected === 'openai') return withOpenAi(plantId, photoCount, opb)
-  if (selected === 'litellm') return withLiteLLM(plantId, photoCount, opb)
-  return withOllama(plantId, photoCount, opb)
+  let result: CarePlanResult
+  if (selected === 'anthropic') result = await withAnthropic(plantId, photoCount, opb)
+  else if (selected === 'openai') result = await withOpenAi(plantId, photoCount, opb)
+  else if (selected === 'litellm') result = await withLiteLLM(plantId, photoCount, opb)
+  else result = await withOllama(plantId, photoCount, opb)
+
+  const intervals = parseCareIntervals(result.plan)
+    if (intervals) {
+      const clean: Record<string, number> = {}
+      for (const [k, v] of Object.entries(intervals)) {
+        if (typeof v === 'number' && v > 0) clean[k] = Math.round(v)
+      }
+      if (Object.keys(clean).length > 0) {
+        result.intervals = intervals
+        result.plan = stripJsonBlock(result.plan)
+      }
+    }
+  return result
 }
 
 export async function generateCarePlanWithContext(plantId: number, provider?: LlmProvider): Promise<{ plan: CarePlanResult; context: unknown }> {
