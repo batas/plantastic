@@ -1,0 +1,1 @@
+ALTER TABLE plants ADD COLUMN sensor_check INTEGER DEFAULT 0;

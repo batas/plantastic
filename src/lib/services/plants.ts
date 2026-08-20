@@ -24,6 +24,7 @@ export interface PlantInput {
   cleanIntervalDays?: number
   rotateIntervalDays?: number
   carePlanDays?: number | null
+  sensorCheck?: boolean
 }
 
 const INTERVAL_FIELDS = [
@@ -51,6 +52,7 @@ export async function createPlant(input: PlantInput) {
       cleanIntervalDays: input.cleanIntervalDays ?? null,
       rotateIntervalDays: input.rotateIntervalDays ?? null,
       carePlanDays: input.carePlanDays ?? null,
+      sensorCheck: input.sensorCheck ?? false,
     })
     .run()
   const id = Number(res.lastInsertRowid)
@@ -64,6 +66,7 @@ export async function updatePlant(id: number, input: Partial<PlantInput>) {
   for (const key of ['name', 'species', 'scientificName', 'opbId', 'location', 'notes', ...INTERVAL_FIELDS] as const) {
     if (input[key] !== undefined) patch[key] = input[key]
   }
+  if (input.sensorCheck !== undefined) patch.sensorCheck = input.sensorCheck
   db.update(plants).set(patch).where(eq(plants.id, id)).run()
   return getPlant(id)
 }

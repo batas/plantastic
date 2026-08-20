@@ -22,6 +22,7 @@ type Detail = {
     cleanIntervalDays: number | null
     rotateIntervalDays: number | null
     carePlanDays: number | null
+    sensorCheck: boolean | null
   }
   photos: { id: number; path: string; thumbPath: string | null; caption: string | null; createdAt: number }[]
   timeline: {
@@ -563,6 +564,11 @@ export default function PlantDetailClient({
           {plant.carePlanDays && plant.carePlanDays > 0 && (
             <p className="mt-2 text-xs text-zinc-400">
               🤖 Auto-plan co {plant.carePlanDays} dni
+            </p>
+          )}
+          {plant.sensorCheck && (
+            <p className="mt-1 text-xs text-zinc-400">
+              📡 Inteligentne przypomnienia z czujników (codziennie LLM)
             </p>
           )}
         </section>

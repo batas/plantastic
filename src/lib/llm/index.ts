@@ -343,3 +343,149 @@ export async function generateCarePlanWithContext(plantId: number, provider?: Ll
 }
 
 export type { CareLog, Photo, Plant, SensorReading }
+
+export interface SensorCheckResult {
+  action: 'water' | 'mist' | 'rotate' | 'none'
+  reason: string
+  urgency: 'high' | 'medium' | 'low'
+  provider: string
+  model: string
+}
+
+function buildSensorCheckPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlantDetail>>): string {
+  const now = new Date()
+  const season = now.getMonth() >= 2 && now.getMonth() < 5 ? 'wiosna' : now.getMonth() >= 5 && now.getMonth() < 8 ? 'lato' : now.getMonth() >= 8 && now.getMonth() < 11 ? 'jesień' : 'zima'
+  const lastWater = detail?.careLogs.find((c) => c.kind === 'water')
+  const lastMist = detail?.careLogs.find((c) => c.kind === 'mist')
+  const lastRotate = detail?.careLogs.find((c) => c.kind === 'rotate')
+
+  const lines = [
+    `Roślina: ${plant.name}`,
+    `Gatunek: ${plant.species ?? 'nieznany'}${plant.scientificName ? ` (${plant.scientificName})` : ''}`,
+    `Pora roku: ${season}, data: ${now.toLocaleDateString('pl-PL')}`,
+    plant.location ? `Lokalizacja: ${plant.location}` : null,
+    '',
+    '[Ostatnie zabiegi]',
+    `Ostatnie podlewanie: ${lastWater ? new Date(lastWater.createdAt * 1000).toLocaleString('pl-PL') : 'brak'}`,
+    `Ostatnie zraszanie: ${lastMist ? new Date(lastMist.createdAt * 1000).toLocaleString('pl-PL') : 'brak'}`,
+    `Ostatnie obracanie: ${lastRotate ? new Date(lastRotate.createdAt * 1000).toLocaleString('pl-PL') : 'brak'}`,
+    '',
+    buildSensorHistory(detail?.latestReadings ?? {}),
+    '',
+    buildOpbSection(null),
+    '',
+    'Oceń na podstawie powyższych danych czy roślina necesita zabiegu pielęgnacyjnego.',
+    'Jeśli TAK — podaj jaki zabieg i dlaczego.',
+    'Jeśli NIE — podaj dlaczego nic nie trzeba robić.',
+  ]
+  return lines.filter((l) => l != null).join('\n')
+}
+
+const SENSOR_CHECK_SYSTEM = [
+  'Jesteś botanikiem ekspertem. Analizujesz dane z czujników wilgotności gleby, temperatury, wilgotności powietrza i światła.',
+  'Twoim zadaniem jest podjęcie DECYZJI: czy roślina necesita teraz zabiegu pielęgnacyjnego (podlewania, zraszania, obracania).',
+  '',
+  'Odpowiadaj TYLKO w formacie JSON (bez żadnego tekstu wokół):',
+  '{',
+  '  "action": "water" | "mist" | "rotate" | "none",',
+  '  "reason": "krótkie wyjaśnienie po polsku (1-2 zdania)",',
+  '  "urgency": "high" | "medium" | "low"',
+  '}',
+  '',
+  'Zasady:',
+  '- "water": wilgotność gleby niska lub spada poniżej optimum gatunkowego',
+  '- "mist": wilgotność powietrza niska, roślina wymaga zraszania',
+  '- "rotate": roślina nierówno rośnie (mierzono światło)',
+  '- "none": parametry w normie, nic nie trzeba robić',
+  '- "high": pilne (roślina może ucierpieć)',  '- "medium": warto zrobić w ciągu 1-2 dni',
+  '- "low": drobna korekta, nie pilne',
+  'Bądź konkretny i opieraj się na danych z czujników.',
+].join('\n')
+
+async function callLlmForSensorCheck(plantId: number, provider: LlmProvider): Promise<SensorCheckResult> {
+  const detail = await getPlantDetail(plantId)
+  if (!detail) throw new Error('Nie znaleziono rośliny')
+  const plant = detail.plant
+  const userPrompt = buildSensorCheckPrompt(plant, detail)
+  let text = ''
+
+  if (provider === 'anthropic') {
+    const cfg = getConfig()
+    const model = cfg.llm?.model ?? 'claude-3-5-sonnet-latest'
+    const client = new Anthropic({ apiKey: cfg.llm?.apiKey })
+    const res = await client.messages.create({
+      model,
+      max_tokens: 1024,
+      system: SENSOR_CHECK_SYSTEM,
+      messages: [{ role: 'user', content: userPrompt }],
+    })
+    text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
+    return parseSensorCheckJson(text, 'anthropic', model)
+  } else if (provider === 'openai') {
+    const cfg = getConfig()
+    const model = cfg.llm?.model ?? 'gpt-4o-mini'
+    const client = new OpenAI({ apiKey: cfg.llm?.apiKey })
+    const res = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: SENSOR_CHECK_SYSTEM },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 1024,
+    })
+    text = res.choices[0]?.message?.content ?? ''
+    return parseSensorCheckJson(text, 'openai', model)
+  } else if (provider === 'litellm') {
+    const cfg = getConfig()
+    const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
+    const model = cfg.llm?.model ?? 'gpt-4o-mini'
+    const apiKey = cfg.llm?.apiKey
+    if (!apiKey) throw new Error('Brak klucza API dla LiteLLM')
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, 'x-litellm-api-key': apiKey },
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: SENSOR_CHECK_SYSTEM }, { role: 'user', content: userPrompt }], max_tokens: 1024 }),
+    })
+    if (!res.ok) throw new Error(`LiteLLM ${res.status}`)
+    const data = await res.json() as Record<string, unknown>
+    text = Array.isArray(data.choices) ? String(((data.choices[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content ?? '') : ''
+    return parseSensorCheckJson(text, 'litellm', model)
+  } else {
+    const cfg = getConfig()
+    const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:11434/v1'
+    const model = cfg.llm?.model ?? 'llava'
+    const client = new OpenAI({ baseURL, apiKey: 'ollama' })
+    const res = await client.chat.completions.create({
+      model,
+      messages: [{ role: 'system', content: SENSOR_CHECK_SYSTEM }, { role: 'user', content: userPrompt }],
+      max_tokens: 1024,
+    })
+    text = res.choices[0]?.message?.content ?? ''
+    return parseSensorCheckJson(text, 'ollama', model)
+  }
+}
+
+function parseSensorCheckJson(text: string, provider: string, model: string): SensorCheckResult {
+  // Try to find JSON in the response
+  const jsonMatch = text.match(/\{[\s\S]*?\}/)
+  if (!jsonMatch) {
+    return { action: 'none', reason: 'Nie udało się sparsować odpowiedzi AI', urgency: 'low', provider, model }
+  }
+  try {
+    const parsed = JSON.parse(jsonMatch[0])
+    const action = ['water', 'mist', 'rotate', 'none'].includes(parsed.action) ? parsed.action : 'none'
+    const urgency = ['high', 'medium', 'low'].includes(parsed.urgency) ? parsed.urgency : 'low'
+    return { action, reason: String(parsed.reason ?? 'Brak wyjaśnienia'), urgency, provider, model }
+  } catch {
+    return { action: 'none', reason: 'Nie udało się sparsować odpowiedzi AI', urgency: 'low', provider, model }
+  }
+}
+
+export async function generateSensorReminder(plantId: number, provider?: LlmProvider): Promise<SensorCheckResult> {
+  const cfg = getConfig()
+  const selected = provider ?? cfg.llm?.provider ?? 'ollama'
+  if (!cfg.llm?.apiKey && selected !== 'ollama') {
+    throw new Error(`Brak klucza API dla providera ${selected}. Skonfiguruj go w ustawieniach.`)
+  }
+  return callLlmForSensorCheck(plantId, selected)
+}

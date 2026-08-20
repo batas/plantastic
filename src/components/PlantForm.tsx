@@ -49,6 +49,7 @@ export default function PlantForm({
     lastRepottedAt: plant?.lastRepottedAt ? new Date(plant.lastRepottedAt * 1000).toISOString().slice(0, 10) : "",
     waterType: plant?.waterType ?? "",
     carePlanDays: plant?.carePlanDays != null ? String(plant.carePlanDays) : "",
+    sensorCheck: plant?.sensorCheck ?? false,
   })
   const [opbQuery, setOpbQuery] = useState("")
   const [opbResults, setOpbResults] = useState<OpbResult[]>([])
@@ -120,6 +121,7 @@ export default function PlantForm({
         lastRepottedAt: form.lastRepottedAt ? Math.floor(new Date(form.lastRepottedAt).getTime() / 1000) : null,
         waterType: form.waterType || null,
         carePlanDays: form.carePlanDays ? Number(form.carePlanDays) : null,
+        sensorCheck: form.sensorCheck,
       }
       const res = await fetch(plant ? `/api/plants/${plant.id}` : "/api/plants", {
         method: plant ? "PUT" : "POST",
@@ -308,6 +310,18 @@ export default function PlantForm({
             onChange={(e) => set("carePlanDays", e.target.value)}
             placeholder="np. 7 (puste = brak)"
           />
+        </div>
+        <div className="flex items-center gap-2 pt-6">
+          <input
+            type="checkbox"
+            id="sensorCheck"
+            checked={form.sensorCheck}
+            onChange={(e) => setForm((f) => ({ ...f, sensorCheck: e.target.checked }))}
+            className="h-4 w-4 rounded border-zinc-300"
+          />
+          <label htmlFor="sensorCheck" className="text-sm text-zinc-700 dark:text-zinc-300">
+            Inteligentne przypomnienia z czujników (LLM)
+          </label>
         </div>
       </div>
 

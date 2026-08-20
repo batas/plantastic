@@ -1,4 +1,4 @@
-import { generateCarePlan } from '@/lib/llm'
+import { generateCarePlan, generateSensorReminder } from '@/lib/llm'
 import { healthCheck } from '@/lib/llm/identify'
 import { addTimelineEntry } from '@/lib/services/care'
 import { updatePlant } from '@/lib/services/plants'
@@ -81,9 +81,43 @@ async function processHealth(taskId: number, plantId: number) {
   }
 }
 
+async function processSensorCheck(taskId: number, plantId: number) {
+  updateTask(taskId, { status: 'running', progress: 10, startedAt: now() })
+
+  try {
+    updateTask(taskId, { progress: 30 })
+    const result = await generateSensorReminder(plantId)
+    updateTask(taskId, { progress: 80 })
+
+    if (result.action !== 'none') {
+      const actionLabels: Record<string, string> = { water: 'Podlewanie', mist: 'Zraszanie', rotate: 'Obracanie' }
+      await addTimelineEntry(plantId, {
+        kind: 'event',
+        title: `Przypomnienie: ${actionLabels[result.action] ?? result.action}`,
+        content: result.reason,
+        dataJson: JSON.stringify({ action: result.action, urgency: result.urgency, source: 'sensor_check' }),
+      })
+    }
+
+    updateTask(taskId, {
+      status: 'done',
+      progress: 100,
+      resultJson: JSON.stringify(result),
+      finishedAt: now(),
+    })
+  } catch (err) {
+    updateTask(taskId, {
+      status: 'failed',
+      error: err instanceof Error ? err.message : 'Nieznany błąd',
+      finishedAt: now(),
+    })
+  }
+}
+
 const processors: Record<string, (taskId: number, plantId: number) => Promise<void>> = {
   care_plan: processCarePlan,
   health: processHealth,
+  sensor_check: processSensorCheck,
 }
 
 export async function processTask(taskId: number, type: TaskType, plantId: number) {

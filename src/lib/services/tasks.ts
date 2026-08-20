@@ -2,7 +2,7 @@ import { eq, and, or, lt } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { asyncTasks } from '@/lib/db/schema'
 
-export type TaskType = 'care_plan' | 'health' | 'identify'
+export type TaskType = 'care_plan' | 'health' | 'identify' | 'sensor_check'
 export type TaskStatus = 'pending' | 'running' | 'done' | 'failed'
 
 export interface TaskResult {
@@ -62,6 +62,7 @@ const TASK_PROGRESS: Record<string, { steps: string[] }> = {
   care_plan: { steps: ['Przygotowywanie danych', 'Analiza AI', 'Zapisywanie'] },
   health: { steps: ['Ładowanie zdjęć', 'Analiza wizualna', 'Ocena zdrowia', 'Zapisywanie'] },
   identify: { steps: ['Przesyłanie zdjęcia', 'Analiza AI'] },
+  sensor_check: { steps: ['Zbieranie odczytów', 'Analiza AI', 'Zapisywanie'] },
 }
 
 export function getTaskSteps(type: string): string[] {

@@ -24,6 +24,7 @@ export const plants = sqliteTable(
     lastRepottedAt: integer('last_repotted_at'),
     waterType: text('water_type'), // tap | filtered | distilled | rain
     carePlanDays: integer('care_plan_days'), // auto-regenerate care plan every N days (null = disabled)
+    sensorCheck: integer('sensor_check', { mode: 'boolean' }).default(false), // LLM sensor-based reminders
     createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
     updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
   },

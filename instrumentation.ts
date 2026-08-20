@@ -12,5 +12,7 @@ export async function register() {
     runReminderWorker()
     const { startPlanRegenerator } = await import('@/lib/services/plan-regenerator')
     startPlanRegenerator()
+    const { startSensorCheckScheduler } = await import('@/lib/services/sensor-check-scheduler')
+    startSensorCheckScheduler()
   }
 }
