@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { addTimelineEntry, deleteTimelineEntry } from '@/lib/services/care'
+import { addTimelineEntry, deleteTimelineEntry, updateTimelineEntryCreatedAt } from '@/lib/services/care'
 import { getPlant } from '@/lib/services/plants'
 
 export async function POST(request: Request, ctx: RouteContext<'/api/plants/[id]/timeline'>) {
@@ -24,4 +24,12 @@ export async function DELETE(request: Request, ctx: RouteContext<'/api/plants/[i
   if (!entryId) return NextResponse.json({ error: 'Brak id wpisu' }, { status: 400 })
   await deleteTimelineEntry(Number(entryId))
   return new NextResponse(null, { status: 204 })
+}
+
+export async function PATCH(request: Request, ctx: RouteContext<'/api/plants/[id]/timeline'>) {
+  await ctx.params
+  const body = await request.json()
+  if (!body.id || !body.createdAt) return NextResponse.json({ error: 'Brak id lub createdAt' }, { status: 400 })
+  await updateTimelineEntryCreatedAt(Number(body.id), Number(body.createdAt))
+  return NextResponse.json({ ok: true })
 }

@@ -40,7 +40,24 @@ export async function addTimelineEntry(plantId: number, input: { kind?: string; 
 }
 
 export async function deleteTimelineEntry(id: number) {
+  const entry = db.select().from(timelineEntries).where(eq(timelineEntries.id, id)).get()
   db.delete(timelineEntries).where(eq(timelineEntries.id, id)).run()
+  if (entry?.kind === 'event' && entry.dataJson) {
+    try {
+      const data = JSON.parse(entry.dataJson)
+      if (data.kind) {
+        const log = db.select().from(careLogs)
+          .where(eq(careLogs.plantId, entry.plantId))
+          .all()
+          .find((l) => l.kind === data.kind && Math.abs(l.createdAt - entry.createdAt) < 5)
+        if (log) db.delete(careLogs).where(eq(careLogs.id, log.id)).run()
+      }
+    } catch {}
+  }
+}
+
+export async function updateTimelineEntryCreatedAt(id: number, createdAt: number) {
+  db.update(timelineEntries).set({ createdAt }).where(eq(timelineEntries.id, id)).run()
 }
 
 export async function listCareLogs(plantId: number) {

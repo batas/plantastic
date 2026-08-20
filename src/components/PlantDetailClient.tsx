@@ -6,6 +6,7 @@ import Link from "next/link"
 import Markdown from "react-markdown"
 import { formatDate, photoUrl } from "@/lib/format"
 import { CARE_META, CARE_TYPES, type CareType } from "@/lib/care-types"
+import SensorCharts from "./SensorCharts"
 
 type Detail = {
   plant: {
@@ -101,6 +102,9 @@ export default function PlantDetailClient({
   const [reidentifying, setReidentifying] = useState(false)
   const [reidentifyError, setReidentifyError] = useState("")
   const [reidentifyResult, setReidentifyResult] = useState<{ identification: { scientificName: string | null; commonName: string | null; confidence: number | null }; opb: { pid: string; display_pid: string; scientific_name?: string; common_name?: string; alias?: string | null }[] } | null>(null)
+  const [editingEntry, setEditingEntry] = useState<number | null>(null)
+  const [editDate, setEditDate] = useState("")
+  const [expandedEntries, setExpandedEntries] = useState<Set<number>>(new Set())
 
   const isBusy = activeTask !== null
 
@@ -373,6 +377,24 @@ export default function PlantDetailClient({
     router.refresh()
   }
 
+  async function deleteTimelineEntry(entryId: number) {
+    if (!confirm("Usunąć ten wpis z historii?")) return
+    await fetch(`/api/plants/${plant.id}/timeline?id=${entryId}`, { method: "DELETE" })
+    router.refresh()
+  }
+
+  async function saveEditTime(entryId: number) {
+    if (!editDate) return
+    const ts = Math.floor(new Date(editDate).getTime() / 1000)
+    await fetch(`/api/plants/${plant.id}/timeline`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: entryId, createdAt: ts }),
+    })
+    setEditingEntry(null)
+    router.refresh()
+  }
+
   const btn = "rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
   const input = "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
   const careButtons: Record<CareType, { label: string; className: string }> = {
@@ -384,6 +406,7 @@ export default function PlantDetailClient({
   }
 
   return (
+    <>
     <div className="mt-4 grid gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2 space-y-6">
         <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -565,47 +588,6 @@ export default function PlantDetailClient({
           ) : (
             <p className="mt-3 text-sm text-zinc-400">Brak zdjęć.</p>
           )}
-        </section>
-
-        <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Historia</h2>
-            <button onClick={() => setShowAddNote((v) => !v)} className="text-sm text-emerald-600 hover:underline">
-              + Notatka
-            </button>
-          </div>
-          {showAddNote && (
-            <div className="mb-3 flex gap-2">
-              <textarea className={input} rows={2} placeholder="Notatka..." value={noteText} onChange={(e) => setNoteText(e.target.value)} />
-              <button onClick={addNote} className="shrink-0 rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700">
-                Dodaj
-              </button>
-            </div>
-          )}
-          <div className="space-y-3">
-            {detail.timeline.map((entry) => (
-              <div key={entry.id} className="rounded-lg border border-zinc-100 p-3 dark:border-zinc-800">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">
-                    {KIND_LABEL[entry.kind] ?? entry.title ?? "Wpis"}
-                    {entry.title && entry.kind !== "event" && entry.kind !== "note" && <span className="text-zinc-400"> — {entry.title}</span>}
-                  </span>
-                  <span className="text-xs text-zinc-400">{formatDate(entry.createdAt)}</span>
-                </div>
-                {entry.content && (
-                  entry.dataJson && JSON.parse(entry.dataJson).format === "markdown" ? (
-                    <div className="mt-1 space-y-2 text-sm text-zinc-600 dark:text-zinc-300 [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:list-disc">
-                      <Markdown>{entry.content}</Markdown>
-                    </div>
-                  ) : (
-                    <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-300">{entry.content}</div>
-                  )
-                )}
-                {entry.photoId && <PhotoThumb photoId={entry.photoId} photos={detail.photos} />}
-              </div>
-            ))}
-            {detail.timeline.length === 0 && <p className="text-sm text-zinc-400">Brak wpisów. Zaloguj podlewanie lub dodaj zdjęcie, żeby rozpocząć historię.</p>}
-          </div>
         </section>
       </div>
 
@@ -814,6 +796,10 @@ export default function PlantDetailClient({
           </div>
         </section>
 
+        <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <SensorCharts latestReadings={detail.latestReadings} />
+        </section>
+
         <section className="rounded-xl border border-zinc-200 bg-white p-5 text-sm dark:border-zinc-800 dark:bg-zinc-900">
           <h2 className="mb-2 font-semibold">Pielęgnacja</h2>
           <p className="text-zinc-500">
@@ -835,6 +821,113 @@ export default function PlantDetailClient({
         </section>
       </div>
     </div>
+
+    <section className="mt-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-semibold">Historia</h2>
+        <button onClick={() => setShowAddNote((v) => !v)} className="text-sm text-emerald-600 hover:underline">
+          + Notatka
+        </button>
+      </div>
+      {showAddNote && (
+        <div className="mb-3 flex gap-2">
+          <textarea className={input} rows={2} placeholder="Notatka..." value={noteText} onChange={(e) => setNoteText(e.target.value)} />
+          <button onClick={addNote} className="shrink-0 rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700">
+            Dodaj
+          </button>
+        </div>
+      )}
+      <div className="space-y-3">
+        {detail.timeline.map((entry) => {
+          let careLabel = ""
+          if (entry.kind === "event" && entry.dataJson) {
+            try {
+              const d = JSON.parse(entry.dataJson)
+              if (d.kind && CARE_META[d.kind as CareType]) {
+                const m = CARE_META[d.kind as CareType]
+                careLabel = `${m.icon} ${m.label}`
+              }
+            } catch {}
+          }
+          const displayLabel = careLabel || (KIND_LABEL[entry.kind] ?? entry.title ?? "Wpis")
+          const isEditing = editingEntry === entry.id
+          const isPlan = entry.kind === "care_plan" && entry.content
+          const isExpanded = expandedEntries.has(entry.id)
+          let isMarkdown = false
+          try { isMarkdown = !!(entry.dataJson && JSON.parse(entry.dataJson).format === "markdown") } catch {}
+          let planSummary = ""
+          if (isPlan && !isExpanded) {
+            const lines = entry.content!.split("\n").filter((l) => l.trim())
+            const firstHeading = entry.content!.match(/^#\s+(.+)/m)
+            planSummary = firstHeading ? firstHeading[1] : lines[0]?.slice(0, 120) ?? ""
+          }
+          return (
+            <div key={entry.id} className="group rounded-lg border border-zinc-100 p-3 dark:border-zinc-800">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">
+                  {displayLabel}
+                  {entry.title && entry.kind !== "event" && entry.kind !== "note" && <span className="text-zinc-400"> — {entry.title}</span>}
+                </span>
+                <div className="flex items-center gap-2">
+                  {isEditing ? (
+                    <span className="flex items-center gap-1">
+                      <input type="datetime-local" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="rounded border border-zinc-300 px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
+                      <button onClick={() => saveEditTime(entry.id)} className="text-xs text-emerald-600 hover:underline">OK</button>
+                      <button onClick={() => setEditingEntry(null)} className="text-xs text-zinc-400 hover:underline">Anuluj</button>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-zinc-400">{formatDate(entry.createdAt)}</span>
+                  )}
+                  {isPlan && (
+                    <button
+                      onClick={() => setExpandedEntries((prev) => { const next = new Set(prev); isExpanded ? next.delete(entry.id) : next.add(entry.id); return next })}
+                      className="text-xs text-zinc-400 opacity-0 transition-opacity hover:text-zinc-600 group-hover:opacity-100 dark:hover:text-zinc-300"
+                      title={isExpanded ? "Zwiń" : "Rozwiń"}
+                    >{isExpanded ? "▲" : "▼"}</button>
+                  )}
+                  <button
+                    onClick={() => { setEditingEntry(entry.id); setEditDate(new Date(entry.createdAt * 1000).toISOString().slice(0, 16)) }}
+                    className="text-xs text-zinc-400 opacity-0 transition-opacity hover:text-zinc-600 group-hover:opacity-100 dark:hover:text-zinc-300"
+                    title="Edytuj czas"
+                  >✏️</button>
+                  <button
+                    onClick={() => deleteTimelineEntry(entry.id)}
+                    className="text-xs text-zinc-400 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                    title="Usuń wpis"
+                  >🗑️</button>
+                </div>
+              </div>
+              {entry.content && (
+                isPlan ? (
+                  isExpanded ? (
+                    <div className="mt-2 space-y-2 text-sm text-zinc-600 dark:text-zinc-300 [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:list-disc">
+                      <Markdown>{entry.content}</Markdown>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setExpandedEntries((prev) => { const next = new Set(prev); next.add(entry.id); return next })}
+                      className="mt-1 w-full text-left text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                    >
+                      <span className="line-clamp-2">{planSummary}</span>
+                      <span className="mt-0.5 text-xs text-zinc-400">Kliknij, żeby rozwinąć...</span>
+                    </button>
+                  )
+                ) : isMarkdown ? (
+                    <div className="mt-1 space-y-2 text-sm text-zinc-600 dark:text-zinc-300 [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_ol]:list-decimal [&_p]:mb-1 [&_strong]:font-semibold [&_ul]:list-disc">
+                      <Markdown>{entry.content}</Markdown>
+                    </div>
+                ) : (
+                    <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-300">{entry.content}</div>
+                )
+              )}
+              {entry.photoId && <PhotoThumb photoId={entry.photoId} photos={detail.photos} />}
+            </div>
+          )
+        })}
+        {detail.timeline.length === 0 && <p className="text-sm text-zinc-400">Brak wpisów. Zaloguj podlewanie lub dodaj zdjęcie, żeby rozpocząć historię.</p>}
+      </div>
+    </section>
+    </>
   )
 }
 

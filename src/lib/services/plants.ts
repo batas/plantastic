@@ -99,7 +99,7 @@ export async function getPlantDetail(id: number): Promise<PlantDetail | null> {
   const latest: Record<string, (typeof sensorReadings.$inferSelect)[]> = {}
   for (const r of readings) {
     if (!latest[r.metric]) latest[r.metric] = []
-    if (latest[r.metric].length < 20) latest[r.metric].push(r)
+    if (latest[r.metric].length < 200) latest[r.metric].push(r)
   }
   return { plant, photos: photosList, timeline, careLogs: logs, latestReadings: latest }
 }
