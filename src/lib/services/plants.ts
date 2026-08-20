@@ -23,6 +23,7 @@ export interface PlantInput {
   mistIntervalDays?: number
   cleanIntervalDays?: number
   rotateIntervalDays?: number
+  carePlanDays?: number | null
 }
 
 const INTERVAL_FIELDS = [
@@ -31,6 +32,7 @@ const INTERVAL_FIELDS = [
   'mistIntervalDays',
   'cleanIntervalDays',
   'rotateIntervalDays',
+  'carePlanDays',
 ] as const
 
 export async function createPlant(input: PlantInput) {
@@ -48,6 +50,7 @@ export async function createPlant(input: PlantInput) {
       mistIntervalDays: input.mistIntervalDays ?? null,
       cleanIntervalDays: input.cleanIntervalDays ?? null,
       rotateIntervalDays: input.rotateIntervalDays ?? null,
+      carePlanDays: input.carePlanDays ?? null,
     })
     .run()
   const id = Number(res.lastInsertRowid)

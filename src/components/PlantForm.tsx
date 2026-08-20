@@ -48,6 +48,7 @@ export default function PlantForm({
     substrateType: plant?.substrateType ?? "",
     lastRepottedAt: plant?.lastRepottedAt ? new Date(plant.lastRepottedAt * 1000).toISOString().slice(0, 10) : "",
     waterType: plant?.waterType ?? "",
+    carePlanDays: plant?.carePlanDays != null ? String(plant.carePlanDays) : "",
   })
   const [opbQuery, setOpbQuery] = useState("")
   const [opbResults, setOpbResults] = useState<OpbResult[]>([])
@@ -118,6 +119,7 @@ export default function PlantForm({
         substrateType: form.substrateType || null,
         lastRepottedAt: form.lastRepottedAt ? Math.floor(new Date(form.lastRepottedAt).getTime() / 1000) : null,
         waterType: form.waterType || null,
+        carePlanDays: form.carePlanDays ? Number(form.carePlanDays) : null,
       }
       const res = await fetch(plant ? `/api/plants/${plant.id}` : "/api/plants", {
         method: plant ? "PUT" : "POST",
@@ -295,6 +297,17 @@ export default function PlantForm({
             <option value="distilled">Destylowana</option>
             <option value="rain">Deszczówka</option>
           </select>
+        </div>
+        <div>
+          <label className={label}>Auto-plan (co ile dni)</label>
+          <input
+            className={input}
+            type="number"
+            min={1}
+            value={form.carePlanDays}
+            onChange={(e) => set("carePlanDays", e.target.value)}
+            placeholder="np. 7 (puste = brak)"
+          />
         </div>
       </div>
 

@@ -21,6 +21,7 @@ type Detail = {
     mistIntervalDays: number | null
     cleanIntervalDays: number | null
     rotateIntervalDays: number | null
+    carePlanDays: number | null
   }
   photos: { id: number; path: string; thumbPath: string | null; caption: string | null; createdAt: number }[]
   timeline: {
@@ -443,7 +444,7 @@ export default function PlantDetailClient({
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={generatePlan} disabled={isBusy} className={`${btn} bg-violet-600 hover:bg-violet-700`}>
-              {activeTask?.type === "care_plan" ? "Generowanie..." : "🤖 Generuj plan pielęgnacji"}
+              {activeTask?.type === "care_plan" ? "Generowanie..." : "🔄 Regeneruj plan pielęgnacji"}
             </button>
             <button onClick={checkHealth} disabled={isBusy} className={`${btn} bg-rose-600 hover:bg-rose-700`}>
               {activeTask?.type === "health" ? "Analiza..." : "🩺 Przegląd stanu (Plant Doctor)"}
@@ -559,6 +560,11 @@ export default function PlantDetailClient({
               )
             })}
           </div>
+          {plant.carePlanDays && plant.carePlanDays > 0 && (
+            <p className="mt-2 text-xs text-zinc-400">
+              🤖 Auto-plan co {plant.carePlanDays} dni
+            </p>
+          )}
         </section>
 
         <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
