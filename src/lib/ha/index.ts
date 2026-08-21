@@ -137,6 +137,32 @@ export async function getEntityRegistry(): Promise<HaEntityRegistryEntry[]> {
   }
 }
 
+export async function fetchPlantAreasFromHa(): Promise<Map<number, string>> {
+  const result = new Map<number, string>()
+  try {
+    const [devices, areas] = await Promise.all([
+      wsCommand<Array<{ identifiers?: string[][]; area_id: string | null }>>('config/device_registry/list'),
+      getAreas(),
+    ])
+    const areaNames = new Map(areas.map((a) => [a.area_id, a.name]))
+    for (const d of devices) {
+      for (const ids of d.identifiers ?? []) {
+        for (const idf of ids) {
+          const m = /^plants_plant_(\d+)$/.exec(idf)
+          if (m && d.area_id) {
+            const name = areaNames.get(d.area_id)
+            if (name) result.set(Number(m[1]), name)
+          }
+        }
+      }
+    }
+    console.log(`[ha] fetchPlantAreasFromHa: ${result.size} plants with area`)
+  } catch (err) {
+    console.error('[ha] fetchPlantAreasFromHa error:', err instanceof Error ? err.message : err)
+  }
+  return result
+}
+
 export interface HaDeviceWithSensors {
   device: HaDevice
   sensors: { entity_id: string; device_class: string | null; state: string; unit: string | null; friendly_name: string | null }[]

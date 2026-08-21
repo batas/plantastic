@@ -1,8 +1,8 @@
 import { getConfig } from '@/lib/settings'
-import { listPlants } from './plants'
+import { listPlants, getPlant, updatePlant } from './plants'
 import { getHaSensorMappings, getAllDeviceMappings, recordReading } from './sensors'
 import { isConnected, publishDiscovery, publishCareStatus } from '@/lib/mqtt'
-import { getState, getEntityRegistry, getDevicesWithSensors } from '@/lib/ha'
+import { getState, getEntityRegistry, getDevicesWithSensors, fetchPlantAreasFromHa } from '@/lib/ha'
 
 const DEVICE_CLASS_METRIC: Record<string, string> = { humidity: 'air_humidity', moisture: 'moisture', temperature: 'temperature' }
 
@@ -25,6 +25,7 @@ export function runReminderWorker() {
           }
         }
         await pollHaSensors()
+        await syncAreasFromHa()
       } catch (err) {
         console.error('[reminders]', err)
       }
@@ -35,6 +36,18 @@ export function runReminderWorker() {
 }
 
 interface TopicMapping { plantId: number; topic: string; metric: string }
+
+async function syncAreasFromHa() {
+  const areaMap = await fetchPlantAreasFromHa()
+  for (const [plantId, area] of areaMap) {
+    const plant = await getPlant(plantId)
+    if (!plant) continue
+    if (plant.location !== area) {
+      await updatePlant(plantId, { location: area })
+      console.log(`[reminders] area sync: plant=${plantId} "${plant.location}" -> "${area}"`)
+    }
+  }
+}
 
 async function pollHaSensors() {
   const entityMappings = await getHaSensorMappings()

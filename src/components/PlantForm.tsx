@@ -35,7 +35,6 @@ export default function PlantForm({
     species: plant?.species ?? prefill?.species ?? "",
     scientificName: plant?.scientificName ?? prefill?.scientificName ?? "",
     opbId: plant?.opbId ?? prefill?.opbId ?? "",
-    location: plant?.location ?? "",
     notes: plant?.notes ?? "",
     waterIntervalDays: plant?.waterIntervalDays != null ? String(plant.waterIntervalDays) : "",
     fertilizeIntervalDays: plant?.fertilizeIntervalDays != null ? String(plant.fertilizeIntervalDays) : "",
@@ -169,10 +168,6 @@ export default function PlantForm({
         <div>
           <label className={label}>Nazwa *</label>
           <input className={input} value={form.name} onChange={(e) => set("name", e.target.value)} required />
-        </div>
-        <div>
-          <label className={label}>Lokalizacja</label>
-          <input className={input} value={form.location} onChange={(e) => set("location", e.target.value)} placeholder="np. salon, okno wschodnie" />
         </div>
       </div>
 

@@ -58,12 +58,38 @@ export default async function DashboardPage() {
           <p className="mt-1 text-sm">Dodaj pierwszą roślinę albo rozpoznaj ją ze zdjęcia, żeby zacząć.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {plants.map((item) => (
-            <PlantCard key={item.plant.id} item={item} />
-          ))}
-        </div>
+        <GroupedPlants plants={plants} />
       )}
+    </div>
+  )
+}
+
+function GroupedPlants({ plants }: { plants: Awaited<ReturnType<typeof getDashboard>>["plants"] }) {
+  const groups = new Map<string, typeof plants>()
+  for (const item of plants) {
+    const key = item.plant.location?.trim() || ""
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  }
+  const keys = [...groups.keys()].sort((a, b) => {
+    if (!a) return 1
+    if (!b) return -1
+    return a.localeCompare(b, "pl")
+  })
+  return (
+    <div className="space-y-6">
+      {keys.map((key) => (
+        <section key={key || "_none"}>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            📍 {key || "Bez lokalizacji"}
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {groups.get(key)!.map((item) => (
+              <PlantCard key={item.plant.id} item={item} />
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   )
 }
