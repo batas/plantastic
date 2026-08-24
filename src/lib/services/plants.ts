@@ -1,7 +1,8 @@
 import { desc, eq, max } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { plants, photos, timelineEntries, careLogs, sensorReadings } from '@/lib/db/schema'
+import { plants, photos, timelineEntries, careLogs, sensorReadings, type CareOverride } from '@/lib/db/schema'
 import { CARE_META, CARE_TYPES, type CareType } from '@/lib/care-types'
+import { getUnresolvedOverrides } from './care-overrides'
 
 export async function listPlants() {
   return db.select().from(plants).orderBy(desc(plants.createdAt)).all()
@@ -115,39 +116,67 @@ export interface CareStatus {
   dueAt: number | null
   overdue: boolean
   lastDoneAt: number | null
+  /** AI override accelerated the due date (or created one when no schedule existed). */
+  aiReason?: string
+  aiUrgency?: 'high' | 'medium' | 'low'
 }
 
 export async function getNextCareDates(plantId: number): Promise<CareStatus[] | null> {
   const plant = await getPlant(plantId)
   if (!plant) return null
-  const lastByKind = new Map(
-    db
-      .select({ kind: careLogs.kind, lastAt: max(careLogs.createdAt) })
-      .from(careLogs)
-      .where(eq(careLogs.plantId, plantId))
-      .groupBy(careLogs.kind)
-      .all()
-      .map((r) => [r.kind as string, Number(r.lastAt)]),
-  )
-  return buildCareStatuses(plant, lastByKind)
+  const [lastByKind, overrides] = await Promise.all([
+    Promise.resolve(
+      db
+        .select({ kind: careLogs.kind, lastAt: max(careLogs.createdAt) })
+        .from(careLogs)
+        .where(eq(careLogs.plantId, plantId))
+        .groupBy(careLogs.kind)
+        .all()
+        .map((r): [string, number | null] => [r.kind as string, Number(r.lastAt)]),
+    ),
+    Promise.resolve(getUnresolvedOverrides(plantId)),
+  ])
+  return buildCareStatuses(plant, new Map(lastByKind), overrides)
 }
 
-/** Compute due/overdue status for every care type given each type's last done timestamp. */
+function overrideMap(overrides: CareOverride[] | undefined): Map<string, CareOverride> {
+  const map = new Map<string, CareOverride>()
+  for (const o of overrides ?? []) map.set(o.kind, o)
+  return map
+}
+
+/**
+ * Compute due/overdue status for every care type given each type's last done timestamp.
+ * Unresolved AI overrides accelerate the due date when earlier than the regular schedule
+ * (and create a due date even when the plant has no interval configured for that kind).
+ */
 export function buildCareStatuses(
   plant: typeof plants.$inferSelect,
   lastByKind: Map<string, number | null>,
+  overrides?: CareOverride[],
 ): CareStatus[] {
   const now = Date.now() / 1000
+  const byKind = overrideMap(overrides)
   return CARE_TYPES.map((type) => {
     const meta = CARE_META[type]
     const interval = meta.intervalField ? plant[meta.intervalField] : null
     const lastAt = lastByKind.get(type) ?? null
-    const dueAt = lastAt != null && interval ? lastAt + interval * 86400 : null
+    let dueAt = lastAt != null && interval ? lastAt + interval * 86400 : null
+
+    const ai = byKind.get(type)
+    let aiReason: string | undefined
+    let aiUrgency: 'high' | 'medium' | 'low' | undefined
+    if (ai && (dueAt == null || ai.dueAt < dueAt)) {
+      dueAt = ai.dueAt
+      aiReason = ai.reason ?? undefined
+      aiUrgency = (ai.urgency as CareStatus['aiUrgency']) ?? 'medium'
+    }
     return {
       type,
       dueAt,
       overdue: dueAt != null && now > dueAt,
       lastDoneAt: lastAt,
+      ...(aiReason ? { aiReason, aiUrgency } : {}),
     }
   })
 }

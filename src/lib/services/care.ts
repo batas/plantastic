@@ -2,6 +2,7 @@ import { desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { careLogs, timelineEntries } from '@/lib/db/schema'
 import { CARE_META, isCareType, type CareType } from '@/lib/care-types'
+import { resolveOverrides } from './care-overrides'
 
 export async function logCare(plantId: number, kind: CareType, amount?: number, unit?: string, notes?: string) {
   const now = Math.floor(Date.now() / 1000)
@@ -19,6 +20,7 @@ export async function logCare(plantId: number, kind: CareType, amount?: number, 
       createdAt: now,
     })
     .run()
+  resolveOverrides(plantId, [kind])
 }
 
 export function normalizeCareKind(k: string): CareType | null {

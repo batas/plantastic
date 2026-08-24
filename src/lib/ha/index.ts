@@ -34,8 +34,7 @@ export async function testConnection(): Promise<{ ok: boolean; message: string }
   }
 }
 
-export async function getStates(domain?: string): Promise<HaState[]> {
-  const cfg = getConfig()
+export async function getStates(domain?: string): Promise<HaState[]> {  const cfg = getConfig()
   const url = cfg.ha?.url
   const token = cfg.ha?.token
   if (!url || !token) {
@@ -79,6 +78,42 @@ export async function getState(entityId: string): Promise<HaState | null> {
     console.error('[ha] getState error:', entityId, err)
     return null
   }
+}
+
+/** Call a HA service over REST, e.g. callHaService('todo', 'add_item', {...}). */
+export async function callHaService(domain: string, service: string, data: Record<string, unknown>): Promise<boolean> {
+  const cfg = getConfig()
+  const url = cfg.ha?.url
+  const token = cfg.ha?.token
+  if (!url || !token) {
+    console.warn('[ha] callHaService: brak url lub tokena')
+    return false
+  }
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, '')}/api/services/${domain}/${service}`, {
+      method: 'POST',
+      headers: getHeaders(token),
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error(`[ha] callHaService ${domain}.${service}: HTTP ${res.status}`, body.slice(0, 200))
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error(`[ha] callHaService ${domain}.${service} error:`, err)
+    return false
+  }
+}
+
+/** Create (or replace) a HA persistent notification. */
+export async function sendPersistentNotification(notificationId: string, title: string, message: string): Promise<boolean> {
+  return callHaService('persistent_notification', 'create', {
+    notification_id: notificationId,
+    title,
+    message,
+  })
 }
 
 export interface HaDevice {

@@ -16,17 +16,9 @@ export function parseCareIntervals(planText: string): CarePlanResult['intervals'
   const jsonMatch = planText.match(/```json\s*\n?(\{[\s\S]*?\})\s*\n?```/)
   if (!jsonMatch) return undefined
   try {
-    const parsed = JSON.parse(jsonMatch[1])
-    const keys = ['waterIntervalDays', 'fertilizeIntervalDays', 'mistIntervalDays', 'cleanIntervalDays', 'rotateIntervalDays'] as const
-    const intervals: Record<string, number> = {}
-    let found = false
-    for (const k of keys) {
-      if (k in parsed && typeof parsed[k] === 'number' && parsed[k] > 0) {
-        intervals[k] = Math.round(parsed[k])
-        found = true
-      }
-    }
-    return found ? intervals : undefined
+    const parsed = JSON.parse(jsonMatch[1]) as Record<string, unknown>
+    const intervals = sanitizeIntervals(parsed)
+    return Object.keys(intervals).length > 0 ? intervals : undefined
   } catch {
     return undefined
   }
@@ -51,7 +43,16 @@ function buildSystemPrompt(): string {
     '',
     'FORMAT MARKDOWN — używaj nagłówków (##, ###), list numerowanych (1. 2. 3.), pogrubień (**tekst**).',
     '',
-    'WYMAGANE SEKCJE (każda rozbudowana, po kilka akapitów):',
+    'ZACZNIJ OD KRÓTKIEGO PODSUMOWANIA — to najważniejsza sekcja:',
+    '## 📌 Podsumowanie',
+    'Maksymalnie 5 zwięzłych punktów (lista z myślnikami), zero lania wody:',
+    '- stan rośliny w jednym zdaniu (np. ✅ Dobra kondycja / ⚠️ Przelana / 🔴 Wymaga interwencji)',
+    '- najważniejszy problem lub jego brak',
+    '- co zrobić w pierwszej kolejności i kiedy',
+    '- zmiany harmonogramu vs dotychczasowy (jeśli są — podaj liczby, np. podlewanie co 7→5 dni)',
+    'NIE pisz NIC przed tym nagłówkiem. Odpowiedź zaczyna się od "## 📌 Podsumowanie".',
+    '',
+    'DALEJ SZCZEGÓŁOWE SEKCJE (każda rozbudowana, po kilka akapitów):',
     '## 🔍 Stan rośliny',
     'Szczegółowa ocena kondycji: liście (kolor, kształt, turgor), łodyga, korzenie, podłoże.',
     'Porównanie aktualnych parametrów z wymaganiami gatunku.',
@@ -75,6 +76,8 @@ function buildSystemPrompt(): string {
     'Na co zwracać uwagę w najbliższych dniach. Symptomy alarmowe wymagające natychmiastowej reakcji.',
     '',
     '---',
+    'DOSTOSUJ INTERWAŁY DO PORY ROKU (podane w danych): zimą wzrost jest spowolniony — wydłuż interwał podlewania i zaniechaj nawożenia; wiosną i latem roślina rośnie — skróć interwały i zwiększ nawożenie.',
+    '',
     'PO PLANIE OZACZ KONIECZNIE BLOK JSON Z INTERWAŁAMI W FORMACIE:',
     '```json',
     '{',
@@ -136,6 +139,11 @@ function buildOpbSection(opb: OpbPlant | null): string {
   return parts.join('\n')
 }
 
+export function seasonName(date: Date = new Date()): string {
+  const m = date.getMonth()
+  return m >= 2 && m < 5 ? 'wiosna' : m >= 5 && m < 8 ? 'lato' : m >= 8 && m < 11 ? 'jesień' : 'zima'
+}
+
 function buildUserPrompt(plant: Plant, detail: NonNullable<Awaited<ReturnType<typeof getPlantDetail>>>, opb: OpbPlant | null, photoCount: number): string {
   const lastWater = detail?.careLogs.find((c) => c.kind === 'water')
   const lastFert = detail?.careLogs.find((c) => c.kind === 'fertilize')
@@ -146,6 +154,7 @@ function buildUserPrompt(plant: Plant, detail: NonNullable<Awaited<ReturnType<ty
     `Roślina: ${plant.name}`,
     `Gatunek: ${plant.species ?? 'nieznany'}${plant.scientificName ? ` (${plant.scientificName})` : ''}`,
     plant.location ? `Lokalizacja: ${plant.location}` : null,
+    `Pora roku: ${seasonName()} (dostosuj interwały pielęgnacji do sezonu)`,
     plant.notes ? `Notatki: ${plant.notes}` : null,
     `Interwał podlewania: ${plant.waterIntervalDays ?? 'brak'} dni`,
     `Interwał nawożenia: ${plant.fertilizeIntervalDays ?? 'brak'} dni`,
@@ -169,6 +178,44 @@ function buildUserPrompt(plant: Plant, detail: NonNullable<Awaited<ReturnType<ty
   return lines.filter((l) => l != null).join('\n')
 }
 
+const INTERVAL_KEYS = ['waterIntervalDays', 'fertilizeIntervalDays', 'mistIntervalDays', 'cleanIntervalDays', 'rotateIntervalDays'] as const
+
+function sanitizeIntervals(parsed: Record<string, unknown>): Record<string, number> {
+  const intervals: Record<string, number> = {}
+  for (const k of INTERVAL_KEYS) {
+    const v = parsed[k]
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) intervals[k] = Math.round(v)
+  }
+  return intervals
+}
+
+/** Second-pass LLM extraction when the markdown JSON block is missing or malformed. */
+async function repairIntervals(planText: string, provider: LlmProvider): Promise<Record<string, number>> {
+  try {
+    const repair = await chat(
+      {
+        system:
+          'Wyciągasz dane strukturalne z tekstu. Odpowiadasz WYŁĄCZNIE obiektem JSON — bez komentarzy, bez markdown.',
+        prompt: [
+          'Poniżej plan pielęgnacji rośliny. Na podstawie sekcji o pielęgnacji ustal interwały zabiegów w dniach.',
+          'Odpowiedz obiektem JSON z kluczami (pomiń klucze, których nie da się ustalić):',
+          '{"waterIntervalDays":7,"fertilizeIntervalDays":30,"mistIntervalDays":3,"cleanIntervalDays":14,"rotateIntervalDays":7}',
+          '',
+          planText.slice(0, 8000),
+        ].join('\n'),
+        maxTokens: 512,
+        json: true,
+      },
+      provider,
+    )
+    const parsed = parseJsonLoose<Record<string, unknown>>(repair.text)
+    return parsed ? sanitizeIntervals(parsed) : {}
+  } catch (err) {
+    console.error('[llm] interval repair failed:', err instanceof Error ? err.message : err)
+    return {}
+  }
+}
+
 export async function generateCarePlan(plantId: number, provider?: LlmProvider, photoCount: number = 4): Promise<CarePlanResult> {
   const cfg = getConfig()
   const selected = provider ?? cfg.llm?.provider ?? 'ollama'
@@ -187,7 +234,13 @@ export async function generateCarePlan(plantId: number, provider?: LlmProvider, 
   }, selected)
 
   let plan = result.truncated ? result.text + TRUNCATION_NOTE : result.text
-  const intervals = parseCareIntervals(plan)
+  const parsed = parseCareIntervals(plan)
+  let intervals = parsed ? { ...parsed } : undefined
+  if (!intervals && !result.truncated) {
+    console.log('[llm] intervals block missing — trying repair extraction')
+    const repaired = await repairIntervals(plan, selected)
+    if (Object.keys(repaired).length > 0) intervals = repaired
+  }
   if (intervals) {
     plan = stripJsonBlock(plan)
   }
@@ -213,7 +266,7 @@ export interface SensorCheckResult {
 
 function buildSensorCheckPrompt(plant: Plant, detail: NonNullable<Awaited<ReturnType<typeof getPlantDetail>>>): string {
   const now = new Date()
-  const season = now.getMonth() >= 2 && now.getMonth() < 5 ? 'wiosna' : now.getMonth() >= 5 && now.getMonth() < 8 ? 'lato' : now.getMonth() >= 8 && now.getMonth() < 11 ? 'jesień' : 'zima'
+  const season = seasonName(now)
   const lastWater = detail?.careLogs.find((c) => c.kind === 'water')
   const lastMist = detail?.careLogs.find((c) => c.kind === 'mist')
   const lastRotate = detail?.careLogs.find((c) => c.kind === 'rotate')

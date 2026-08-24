@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { CARE_META } from "@/lib/care-types"
-import type { CareStatus, OpbGuide } from "./shared"
+import type { CareStatus, IntervalChange, OpbGuide } from "./shared"
 
 export function TaskProgressBox({
   kind,
@@ -80,15 +80,36 @@ export function NextCareChips({ careStatus }: { careStatus: CareStatus[] }) {
         const days = Math.ceil((c.dueAt - now) / 86400)
         const cls = c.overdue
           ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
-          : days <= 1
-            ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-            : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+          : c.aiReason
+            ? "border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300"
+            : days <= 1
+              ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+              : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
         return (
-          <span key={c.type} className={`rounded-full border px-3 py-1 text-sm ${cls}`}>
-            {meta.icon} {meta.label}: {c.overdue ? "🔴 zaległe" : days === 0 ? "dzisiaj" : `${days} dni`}
+          <span
+            key={c.type}
+            title={c.aiReason ? `🤖 AI zaleca: ${c.aiReason}` : undefined}
+            className={`rounded-full border px-3 py-1 text-sm ${cls}`}
+          >
+            {meta.icon} {meta.label}:{" "}
+            {c.overdue ? "🔴 zaległe" : days === 0 ? "dzisiaj" : `${days} dni`}
+            {c.aiReason && <span className="ml-1" title={`AI zaleca: ${c.aiReason}`}>🤖</span>}
           </span>
         )
       })}
+    </div>
+  )
+}
+
+export function IntervalChangeChips({ changes }: { changes: IntervalChange[] }) {
+  if (changes.length === 0) return null
+  return (
+    <div className="mt-1 flex flex-wrap gap-1.5">
+      {changes.map((ch, i) => (
+        <span key={`${ch.kind}-${i}`} className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300">
+          🤖 {ch.icon} {ch.before != null ? `${ch.before} → ${ch.after}` : ch.after} dni
+        </span>
+      ))}
     </div>
   )
 }

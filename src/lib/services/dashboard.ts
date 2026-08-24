@@ -1,6 +1,6 @@
-import { and, desc, inArray, max, sql } from 'drizzle-orm'
+import { and, desc, inArray, isNull, max, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { careLogs, photos, plants, sensorReadings } from '@/lib/db/schema'
+import { careLogs, careOverrides, photos, plants, sensorReadings } from '@/lib/db/schema'
 import { buildCareStatuses, type CareStatus } from './plants'
 import { CARE_META, type CareType } from '@/lib/care-types'
 
@@ -20,6 +20,8 @@ export interface DashboardTask {
   dueAt: number | null
   overdue: boolean
   lastDoneAt: number | null
+  aiReason?: string
+  aiUrgency?: 'high' | 'medium' | 'low'
 }
 
 /** One row per (plant, metric) — the most recent reading, without loading full history. */
@@ -50,7 +52,7 @@ export async function getDashboard() {
   if (all.length === 0) return { plants: [], tasks: [] as DashboardTask[], now }
   const ids = all.map((p) => p.id)
 
-  const [latestPhotos, readings, lastCareRows] = await Promise.all([
+  const [latestPhotos, readings, lastCareRows, overrides] = await Promise.all([
     db.select().from(photos).where(inArray(photos.plantId, ids)).orderBy(desc(photos.createdAt)).all(),
     Promise.resolve(latestReadingPerMetric(ids)),
     Promise.resolve(
@@ -61,6 +63,7 @@ export async function getDashboard() {
         .groupBy(careLogs.plantId, careLogs.kind)
         .all(),
     ),
+    Promise.resolve(db.select().from(careOverrides).where(isNull(careOverrides.resolvedAt)).all()),
   ])
 
   const photoByPlant = new Map<number, (typeof photos.$inferSelect)>()
@@ -75,6 +78,12 @@ export async function getDashboard() {
     lastCareByPlant.get(r.plantId)!.set(r.kind as string, Number(r.lastAt))
   }
 
+  const overridesByPlant = new Map<number, typeof overrides>()
+  for (const o of overrides) {
+    if (!overridesByPlant.has(o.plantId)) overridesByPlant.set(o.plantId, [])
+    overridesByPlant.get(o.plantId)!.push(o)
+  }
+
   const tasks: DashboardTask[] = []
   const result: DashboardPlant[] = []
   for (const plant of all) {
@@ -83,7 +92,7 @@ export async function getDashboard() {
       temperature: readingByPlantMetric.get(`${plant.id}:temperature`) ?? null,
       light: readingByPlantMetric.get(`${plant.id}:light`) ?? null,
     }
-    const care = buildCareStatuses(plant, lastCareByPlant.get(plant.id) ?? new Map())
+    const care = buildCareStatuses(plant, lastCareByPlant.get(plant.id) ?? new Map(), overridesByPlant.get(plant.id))
     for (const c of care) {
       if (c.dueAt && c.dueAt <= now + 24 * 3600) {
         tasks.push({
@@ -93,6 +102,7 @@ export async function getDashboard() {
           dueAt: c.dueAt,
           overdue: c.overdue,
           lastDoneAt: c.lastDoneAt,
+          ...(c.aiReason ? { aiReason: c.aiReason, aiUrgency: c.aiUrgency } : {}),
         })
       }
     }

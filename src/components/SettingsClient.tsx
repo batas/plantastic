@@ -14,10 +14,15 @@ interface SensorMapping {
 
 interface SettingsData {
   mqtt: { host: string; port: number; user: string; hasPassword: boolean }
-  ha: { url: string; hasToken: boolean }
+  ha: { url: string; hasToken: boolean; todoEntity: string; notifyEnabled: boolean; notifyDaysOverdue: number }
   llm: { provider: string; model: string; hasApiKey: boolean; baseUrl: string }
   opb: { hasClientId: boolean; hasSecret: boolean }
   connected: boolean
+}
+
+interface HaTodo {
+  entity_id: string
+  friendly_name: string | null
 }
 
 interface HaEntity {
@@ -68,6 +73,8 @@ export default function SettingsClient({
   const [pickerError, setPickerError] = useState<string | null>(null)
   const [pickerSearch, setPickerSearch] = useState("")
   const [areaFilter, setAreaFilter] = useState("")
+  const [haTodos, setHaTodos] = useState<HaTodo[]>([])
+  const [haTodosError, setHaTodosError] = useState<string | null>(null)
 
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -134,7 +141,12 @@ export default function SettingsClient({
     try {
       const body: Record<string, unknown> = {
         mqtt: { host: cfg.mqtt.host, port: cfg.mqtt.port, user: cfg.mqtt.user },
-        ha: { url: cfg.ha.url },
+        ha: {
+          url: cfg.ha.url,
+          todoEntity: cfg.ha.todoEntity ?? "",
+          notifyEnabled: cfg.ha.notifyEnabled !== false,
+          notifyDaysOverdue: Number(cfg.ha.notifyDaysOverdue) || 1,
+        },
         llm: { provider: cfg.llm.provider, model: cfg.llm.model, baseUrl: cfg.llm.baseUrl },
         opb: {},
       }
@@ -221,6 +233,19 @@ export default function SettingsClient({
     }
   }
 
+  async function ensureHaTodos() {
+    if (haTodos.length > 0) return
+    setHaTodosError(null)
+    try {
+      const res = await fetch("/api/ha/todos")
+      const data = await res.json()
+      if (!res.ok) { setHaTodosError(data.details ?? data.error ?? `Błąd ${res.status}`); return }
+      setHaTodos(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setHaTodosError(`Nie udało się pobrać list To-do: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   function selectEntity(id: string) {
     setNewMapping((m) => ({ ...m, topic: id }))
     setPickerSearch("")
@@ -266,6 +291,52 @@ export default function SettingsClient({
           <div>
             <label className={label}>Long-Lived Access Token {cfg.ha.hasToken && "(zapisany)"}</label>
             <input className={input} type="password" value={haToken} onChange={(e) => setHaToken(e.target.value)} placeholder="eyJ..." />
+          </div>
+          <div>
+            <label className={label}>
+              Lista To-do (dwukierunkowy sync zadań)
+              {" "}
+              <button type="button" onClick={ensureHaTodos} className="text-xs text-emerald-600 hover:underline">
+                odśwież
+              </button>
+            </label>
+            <select
+              className={input}
+              value={cfg.ha.todoEntity ?? ""}
+              onChange={(e) => setCfg((c) => ({ ...c, ha: { ...c.ha, todoEntity: e.target.value } }))}
+              onFocus={ensureHaTodos}
+            >
+              <option value="">— wyłączona —</option>
+              {haTodos.map((t) => (
+                <option key={t.entity_id} value={t.entity_id}>{t.friendly_name ?? t.entity_id} ({t.entity_id})</option>
+              ))}
+            </select>
+            {haTodosError && <p className="mt-1 text-xs text-red-600">{haTodosError}</p>}
+            <p className="mt-1 text-xs text-zinc-400">
+              Utwórz w HA listę &quot;To-do list&quot; (Local To-do). Zadania pielęgnacyjne pojawią się na liście, a odhaczenie ich w HA zaloguje zabieg.
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={cfg.ha.notifyEnabled !== false}
+                onChange={(e) => setCfg((c) => ({ ...c, ha: { ...c.ha, notifyEnabled: e.target.checked } }))}
+              />
+              Powiadomienia o zaległych zabiegach (persistent notification)
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">po</span>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                className="w-16 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                value={cfg.ha.notifyDaysOverdue ?? 1}
+                onChange={(e) => setCfg((c) => ({ ...c, ha: { ...c.ha, notifyDaysOverdue: Number(e.target.value) || 1 } }))}
+              />
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">dniach zaległości</span>
+            </div>
           </div>
         </form>
       </section>

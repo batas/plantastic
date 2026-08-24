@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import Markdown from "react-markdown"
 import { formatDate, photoUrl } from "@/lib/format"
 import { CARE_META, type CareType } from "@/lib/care-types"
-import { KIND_LABEL, MARKDOWN_PROSE, type Detail } from "./shared"
+import { KIND_LABEL, MARKDOWN_PROSE, type Detail, type IntervalChange } from "./shared"
+import { IntervalChangeChips } from "./parts"
 
 export default function PlantTimeline({
   plantId,
@@ -95,13 +96,24 @@ export default function PlantTimeline({
           const isPlan = entry.kind === "care_plan" && entry.content
           const isExpanded = expandedEntries.has(entry.id)
           let isMarkdown = false
-          try { isMarkdown = !!(entry.dataJson && JSON.parse(entry.dataJson).format === "markdown") } catch {}
+          let intervalChanges: IntervalChange[] = []
+          try {
+            const d = entry.dataJson ? JSON.parse(entry.dataJson) : null
+            isMarkdown = !!d && d.format === "markdown"
+            if (Array.isArray(d?.intervalChanges)) intervalChanges = d.intervalChanges as IntervalChange[]
+          } catch {}
           let planSummary = ""
           if (isPlan && !isExpanded) {
-            const lines = entry.content!.split("\n").filter((l) => l.trim())
-            const firstHeading = entry.content!.match(/^#\s+(.+)/m)
-            planSummary = firstHeading ? firstHeading[1] : lines[0]?.slice(0, 120) ?? ""
+            const summaryMd = extractPlanSummary(entry.content!)
+            if (summaryMd) {
+              planSummary = summaryMd
+            } else {
+              const lines = entry.content!.split("\n").filter((l) => l.trim())
+              const firstHeading = entry.content!.match(/^#\s+(.+)/m)
+              planSummary = firstHeading ? firstHeading[1] : lines[0]?.slice(0, 120) ?? ""
+            }
           }
+          const hasStructuredSummary = isPlan && !!extractPlanSummary(entry.content!)
           return (
             <div key={entry.id} className="group rounded-lg border border-zinc-100 p-3 dark:border-zinc-800">
               <div className="flex items-center justify-between text-sm">
@@ -144,15 +156,21 @@ export default function PlantTimeline({
                     <div className={`mt-2 space-y-2 text-sm text-zinc-600 dark:text-zinc-300 ${MARKDOWN_PROSE}`}>
                       <Markdown>{entry.content}</Markdown>
                     </div>
-                  ) : (
-                    <button
-                      onClick={() => setExpandedEntries((prev) => { const next = new Set(prev); next.add(entry.id); return next })}
-                      className="mt-1 w-full text-left text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-                    >
-                      <span className="line-clamp-2">{planSummary}</span>
-                      <span className="mt-0.5 text-xs text-zinc-400">Kliknij, żeby rozwinąć...</span>
-                    </button>
-                  )
+                ) : (
+                  <div
+                    onClick={() => setExpandedEntries((prev) => { const next = new Set(prev); next.add(entry.id); return next })}
+                    className="mt-1 cursor-pointer text-left"
+                  >
+                    {hasStructuredSummary ? (
+                      <div className={`space-y-1.5 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300 ${MARKDOWN_PROSE}`}>
+                        <Markdown>{planSummary}</Markdown>
+                      </div>
+                    ) : (
+                      <span className="line-clamp-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">{planSummary}</span>
+                    )}
+                    <span className="mt-0.5 block text-xs text-zinc-400">Kliknij, żeby rozwinąć pełny plan...</span>
+                  </div>
+                )
                 ) : isMarkdown ? (
                   <div className={`mt-1 space-y-2 text-sm text-zinc-600 dark:text-zinc-300 ${MARKDOWN_PROSE}`}>
                     <Markdown>{entry.content}</Markdown>
@@ -161,6 +179,7 @@ export default function PlantTimeline({
                   <div className="mt-1 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-300">{entry.content}</div>
                 )
               )}
+              {intervalChanges.length > 0 && <IntervalChangeChips changes={intervalChanges} />}
               {entry.photoId && <PhotoThumb photoId={entry.photoId} photos={photos} />}
             </div>
           )
@@ -169,6 +188,11 @@ export default function PlantTimeline({
       </div>
     </section>
   )
+}
+
+function extractPlanSummary(content: string): string | null {
+  const m = content.match(/##\s*📌\s*Podsumowanie\s*\n([\s\S]*?)(?=\n##\s|\n---|$)/i)
+  return m ? m[1].trim() || null : null
 }
 
 function PhotoThumb({ photoId, photos }: { photoId: number; photos: Detail["photos"] }) {

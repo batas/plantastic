@@ -37,9 +37,10 @@ export default async function DashboardPage() {
               const meta = CARE_META[t.type as CareType]
               return (
                 <li key={`${t.plantId}-${t.type}`}>
-                  <Link href={`/plants/${t.plantId}`} className="hover:underline">
+                  <Link href={`/plants/${t.plantId}`} className="hover:underline" title={t.aiReason ? `AI zaleca: ${t.aiReason}` : undefined}>
                     {t.overdue ? "🔴" : t.dueAt && t.dueAt <= now + 3600 ? "🟡" : "🟢"}{" "}
                     {meta.icon} {meta.label} — {t.plantName}
+                    {t.aiReason && " 🤖"}
                   </Link>{" "}
                   <span className="text-xs text-amber-700/70 dark:text-amber-300/70">
                     ({t.overdue ? "zaległe" : dueText(t.dueAt, now)})

@@ -26,6 +26,9 @@ export default async function SettingsPage() {
           ha: {
             url: cfg.ha?.url ?? "",
             hasToken: Boolean(cfg.ha?.token),
+            todoEntity: cfg.ha?.todoEntity ?? "",
+            notifyEnabled: cfg.ha?.notifyEnabled !== false,
+            notifyDaysOverdue: cfg.ha?.notifyDaysOverdue ?? 1,
           },
           llm: {
             provider: cfg.llm?.provider ?? "ollama",

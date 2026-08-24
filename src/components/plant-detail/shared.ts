@@ -37,7 +37,22 @@ export type Detail = {
   latestReadings: Record<string, { value: number; unit: string | null; measuredAt: number }[]>
 }
 
-export type CareStatus = { type: CareType; dueAt: number | null; overdue: boolean; lastDoneAt: number | null }
+export type CareStatus = {
+  type: CareType
+  dueAt: number | null
+  overdue: boolean
+  lastDoneAt: number | null
+  aiReason?: string
+  aiUrgency?: "high" | "medium" | "low"
+}
+
+export interface IntervalChange {
+  kind: string
+  icon: string
+  label: string
+  before: number | null
+  after: number
+}
 
 export type OpbGuide = {
   common_name?: string

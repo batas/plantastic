@@ -14,6 +14,9 @@ export async function GET() {
     ha: {
       url: cfg.ha?.url ?? '',
       hasToken: Boolean(cfg.ha?.token),
+      todoEntity: cfg.ha?.todoEntity ?? '',
+      notifyEnabled: cfg.ha?.notifyEnabled !== false,
+      notifyDaysOverdue: cfg.ha?.notifyDaysOverdue ?? 1,
     },
     llm: {
       provider: cfg.llm?.provider ?? 'ollama',
@@ -41,6 +44,9 @@ export async function POST(request: Request) {
   if (body.ha) {
     if (body.ha.url !== undefined) patch.ha_url = String(body.ha.url)
     if (body.ha.token !== undefined) patch.ha_token = String(body.ha.token)
+    if (body.ha.todoEntity !== undefined) patch.ha_todo_entity = String(body.ha.todoEntity)
+    if (body.ha.notifyEnabled !== undefined) patch.ha_notify_enabled = Boolean(body.ha.notifyEnabled)
+    if (body.ha.notifyDaysOverdue !== undefined) patch.ha_notify_days_overdue = Math.max(1, Number(body.ha.notifyDaysOverdue) || 1)
   }
   if (body.llm) {
     if (body.llm.provider !== undefined) patch.llm_provider = String(body.llm.provider)

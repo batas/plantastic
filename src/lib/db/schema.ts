@@ -124,6 +124,23 @@ export const deviceMappings = sqliteTable(
   (t) => [index('device_mappings_plant_idx').on(t.plantId)],
 )
 
+export const careOverrides = sqliteTable(
+  'care_overrides',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    plantId: integer('plant_id')
+      .notNull()
+      .references(() => plants.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // water | fertilize | mist | clean | rotate
+    dueAt: integer('due_at').notNull(),
+    reason: text('reason'),
+    urgency: text('urgency').notNull().default('medium'), // high | medium | low
+    createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+    resolvedAt: integer('resolved_at'),
+  },
+  (t) => [index('care_overrides_plant_idx').on(t.plantId, t.resolvedAt)],
+)
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
@@ -154,3 +171,4 @@ export type SensorMapping = typeof sensorMappings.$inferSelect
 export type SensorReading = typeof sensorReadings.$inferSelect
 export type DeviceMapping = typeof deviceMappings.$inferSelect
 export type AsyncTask = typeof asyncTasks.$inferSelect
+export type CareOverride = typeof careOverrides.$inferSelect

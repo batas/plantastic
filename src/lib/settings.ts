@@ -13,6 +13,11 @@ export interface AppConfig {
   ha?: {
     url?: string
     token?: string
+    /** HA to-do list entity (todo.*) synced two-way with plant care tasks */
+    todoEntity?: string
+    /** persistent notifications for overdue care */
+    notifyEnabled?: boolean
+    notifyDaysOverdue?: number
   }
   llm?: {
     provider: LlmProvider
@@ -62,6 +67,9 @@ export function getConfig(): AppConfig {
     ha: {
       url: (opts.ha_url as string) ?? process.env.HA_URL,
       token: (opts.ha_token as string) ?? process.env.HA_TOKEN,
+      todoEntity: (opts.ha_todo_entity as string) ?? undefined,
+      notifyEnabled: opts.ha_notify_enabled !== false,
+      notifyDaysOverdue: Number(opts.ha_notify_days_overdue ?? 1),
     },
     llm: {
       provider: ((opts.llm_provider as string) ?? process.env.LLM_PROVIDER ?? 'ollama') as LlmProvider,

@@ -10,7 +10,7 @@ import { NextCareChips, TaskProgressBox, GuideCard } from "./plant-detail/parts"
 import ReidentifyPanel from "./plant-detail/ReidentifyPanel"
 import SensorMapper from "./plant-detail/SensorMapper"
 import PlantTimeline from "./plant-detail/PlantTimeline"
-import type { Detail } from "./plant-detail/shared"
+import type { CareStatus, Detail } from "./plant-detail/shared"
 
 const CARE_BUTTONS: Record<CareType, { label: string; className: string }> = {
   water: { label: "💧 Podlane", className: "bg-sky-600 hover:bg-sky-700" },
@@ -29,7 +29,7 @@ export default function PlantDetailClient({
   entityNames,
 }: {
   detail: Detail
-  careStatus: { type: CareType; dueAt: number | null; overdue: boolean; lastDoneAt: number | null }[]
+  careStatus: CareStatus[]
   opbGuide: React.ComponentProps<typeof GuideCard>["guide"] | null
   sensorMappings: { id: number; plantId: number; topic: string; metric: string; source: string }[]
   deviceMappings: { id: number; plantId: number; haDeviceId: string; deviceName: string | null; createdAt: number }[]

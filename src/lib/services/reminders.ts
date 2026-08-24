@@ -7,12 +7,14 @@ import { getState, getEntityRegistry, getDevicesWithSensors, fetchPlantAreasFrom
 const DEVICE_CLASS_METRIC: Record<string, string> = { humidity: 'air_humidity', moisture: 'moisture', temperature: 'temperature' }
 
 let started = false
+let tick = 0
 
 export function runReminderWorker() {
   if (started) return
   started = true
   const interval = setInterval(
     async () => {
+      tick++
       try {
         if (isConnected()) {
           const cfg = getConfig()
@@ -26,6 +28,13 @@ export function runReminderWorker() {
         }
         await pollHaSensors()
         await syncAreasFromHa()
+        // heavy HA integrations every ~10 minutes
+        if (tick % 10 === 0) {
+          const { syncTodoLists } = await import('./todo-sync')
+          await syncTodoLists().catch((err) => console.error('[reminders] todo-sync', err))
+          const { checkOverdueAndNotify } = await import('./ha-notify')
+          await checkOverdueAndNotify().catch((err) => console.error('[reminders] ha-notify', err))
+        }
       } catch (err) {
         console.error('[reminders]', err)
       }
