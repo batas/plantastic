@@ -57,15 +57,20 @@ export default function PlantForm({
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("pendingPhoto")
-      if (raw) {
-        const photo = JSON.parse(raw) as PendingPhoto
-        pendingPhotoRef.current = photo
-        setPendingPreview(photo.data)
-        sessionStorage.removeItem("pendingPhoto")
-      }
-    } catch {}
+    function loadPendingPhoto() {
+      try {
+        const raw = sessionStorage.getItem("pendingPhoto")
+        if (raw) {
+          const photo = JSON.parse(raw) as PendingPhoto
+          pendingPhotoRef.current = photo
+          setPendingPreview(photo.data)
+          sessionStorage.removeItem("pendingPhoto")
+        }
+      } catch {}
+    }
+    // defer to a task so we don't setState synchronously inside the effect body
+    const t = setTimeout(loadPendingPhoto, 0)
+    return () => clearTimeout(t)
   }, [])
 
   function set<K extends keyof typeof form>(key: K, value: string) {

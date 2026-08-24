@@ -27,8 +27,9 @@ export default function SensorCharts({
   latestReadings: Record<string, Reading[]>
 }) {
   const [range, setRange] = useState<24 | 72 | 168 | 720>(24)
+  const [nowSec] = useState(() => Math.floor(Date.now() / 1000))
 
-  const cutoff = Math.floor(Date.now() / 1000) - range * 3600
+  const cutoff = nowSec - range * 3600
 
   return (
     <div className="space-y-4">

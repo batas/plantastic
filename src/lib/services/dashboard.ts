@@ -1,7 +1,7 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, inArray, max, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { photos, plants, sensorReadings } from '@/lib/db/schema'
-import { getNextCareDates, type CareStatus } from './plants'
+import { careLogs, photos, plants, sensorReadings } from '@/lib/db/schema'
+import { buildCareStatuses, type CareStatus } from './plants'
 import { CARE_META, type CareType } from '@/lib/care-types'
 
 export interface DashboardPlant {
@@ -22,26 +22,68 @@ export interface DashboardTask {
   lastDoneAt: number | null
 }
 
+/** One row per (plant, metric) — the most recent reading, without loading full history. */
+function latestReadingPerMetric(plantIds: number[]) {
+  return db
+    .select({
+      plantId: sensorReadings.plantId,
+      metric: sensorReadings.metric,
+      value: sensorReadings.value,
+    })
+    .from(sensorReadings)
+    .where(
+      and(
+        inArray(sensorReadings.plantId, plantIds),
+        sql`${sensorReadings.id} IN (
+          SELECT s2.id FROM sensor_readings s2
+          WHERE s2.plant_id = ${sensorReadings.plantId} AND s2.metric = ${sensorReadings.metric}
+          ORDER BY s2.measured_at DESC LIMIT 1
+        )`,
+      ),
+    )
+    .all()
+}
+
 export async function getDashboard() {
   const now = Date.now() / 1000
   const all = db.select().from(plants).orderBy(desc(plants.createdAt)).all()
+  if (all.length === 0) return { plants: [], tasks: [] as DashboardTask[], now }
+  const ids = all.map((p) => p.id)
+
+  const [latestPhotos, readings, lastCareRows] = await Promise.all([
+    db.select().from(photos).where(inArray(photos.plantId, ids)).orderBy(desc(photos.createdAt)).all(),
+    Promise.resolve(latestReadingPerMetric(ids)),
+    Promise.resolve(
+      db
+        .select({ plantId: careLogs.plantId, kind: careLogs.kind, lastAt: max(careLogs.createdAt) })
+        .from(careLogs)
+        .where(inArray(careLogs.plantId, ids))
+        .groupBy(careLogs.plantId, careLogs.kind)
+        .all(),
+    ),
+  ])
+
+  const photoByPlant = new Map<number, (typeof photos.$inferSelect)>()
+  for (const p of latestPhotos) if (!photoByPlant.has(p.plantId)) photoByPlant.set(p.plantId, p)
+
+  const readingByPlantMetric = new Map<string, number>()
+  for (const r of readings) readingByPlantMetric.set(`${r.plantId}:${r.metric}`, r.value)
+
+  const lastCareByPlant = new Map<number, Map<string, number | null>>()
+  for (const r of lastCareRows) {
+    if (!lastCareByPlant.has(r.plantId)) lastCareByPlant.set(r.plantId, new Map())
+    lastCareByPlant.get(r.plantId)!.set(r.kind as string, Number(r.lastAt))
+  }
+
   const tasks: DashboardTask[] = []
   const result: DashboardPlant[] = []
   for (const plant of all) {
-    const [photo, readings] = await Promise.all([
-      db.select().from(photos).where(eq(photos.plantId, plant.id)).orderBy(desc(photos.createdAt)).limit(1).get(),
-      db
-        .select()
-        .from(sensorReadings)
-        .where(eq(sensorReadings.plantId, plant.id))
-        .orderBy(desc(sensorReadings.measuredAt))
-        .all(),
-    ])
-    const latest: Record<string, number | null> = { moisture: null, temperature: null, light: null }
-    for (const r of readings) {
-      if (latest[r.metric] === null) latest[r.metric] = r.value
+    const latest = {
+      moisture: readingByPlantMetric.get(`${plant.id}:moisture`) ?? null,
+      temperature: readingByPlantMetric.get(`${plant.id}:temperature`) ?? null,
+      light: readingByPlantMetric.get(`${plant.id}:light`) ?? null,
     }
-    const care = (await getNextCareDates(plant.id)) ?? []
+    const care = buildCareStatuses(plant, lastCareByPlant.get(plant.id) ?? new Map())
     for (const c of care) {
       if (c.dueAt && c.dueAt <= now + 24 * 3600) {
         tasks.push({
@@ -54,14 +96,7 @@ export async function getDashboard() {
         })
       }
     }
-    result.push({
-      plant,
-      photo: photo ?? null,
-      care,
-      moisture: latest.moisture,
-      temperature: latest.temperature,
-      light: latest.light,
-    })
+    result.push({ plant, photo: photoByPlant.get(plant.id) ?? null, care, ...latest })
   }
   tasks.sort((a, b) => (a.overdue === b.overdue ? (a.dueAt ?? 0) - (b.dueAt ?? 0) : a.overdue ? -1 : 1))
   return { plants: result, tasks, now }

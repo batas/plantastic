@@ -1,4 +1,5 @@
 import { getConfig, maskSecret } from '@/lib/settings'
+import { chat, parseJsonLoose } from '@/lib/llm/client'
 
 const API = 'https://open.plantbook.io/api/v1'
 
@@ -106,40 +107,9 @@ export async function translateOpbGuide(guide: OpbPlant): Promise<OpbPlant> {
 Input: ${JSON.stringify(fields)}`
 
   try {
-    let text = ''
-    if (provider === 'anthropic') {
-      const { Anthropic } = await import('@anthropic-ai/sdk')
-      const client = new Anthropic({ apiKey })
-      const model = cfg.llm?.model ?? 'claude-3-5-sonnet-latest'
-      const res = await client.messages.create({ model, max_tokens: 300, messages: [{ role: 'user', content: prompt }] })
-      text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
-    } else if (provider === 'litellm') {
-      const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
-      const model = cfg.llm?.model ?? 'gpt-4o-mini'
-      const key = apiKey ?? ''
-      const res = await fetch(`${base}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, 'x-litellm-api-key': key },
-        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 300 }),
-      })
-      if (res.ok) {
-        const data = await res.json() as { choices?: { message?: { content?: string } }[] }
-        text = data.choices?.[0]?.message?.content ?? ''
-      }
-    } else {
-      const OpenAI = (await import('openai')).default
-      const baseURL = provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : undefined
-      const client = new OpenAI({ apiKey: provider === 'ollama' ? 'ollama' : apiKey, baseURL })
-      const model = cfg.llm?.model ?? 'gpt-4o-mini'
-      const res = await client.chat.completions.create({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 300 })
-      text = res.choices[0]?.message?.content ?? ''
-    }
-
-    const cleaned = text.replace(/```json|```/g, '').trim()
-    const start = cleaned.indexOf('{')
-    const end = cleaned.lastIndexOf('}')
-    if (start === -1 || end === -1) return guide
-    const translated = JSON.parse(cleaned.slice(start, end + 1)) as Record<string, string>
+    const result = await chat({ prompt, maxTokens: 300 })
+    const translated = parseJsonLoose<Record<string, string>>(result.text)
+    if (!translated) return guide
     console.log('[opb] translated guide:', translated)
     return {
       ...guide,

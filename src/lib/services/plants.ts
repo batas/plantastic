@@ -1,4 +1,4 @@
-import { desc, eq, and } from 'drizzle-orm'
+import { desc, eq, max } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { plants, photos, timelineEntries, careLogs, sensorReadings } from '@/lib/db/schema'
 import { CARE_META, CARE_TYPES, type CareType } from '@/lib/care-types'
@@ -120,26 +120,34 @@ export interface CareStatus {
 export async function getNextCareDates(plantId: number): Promise<CareStatus[] | null> {
   const plant = await getPlant(plantId)
   if (!plant) return null
-  const now = Date.now() / 1000
-  const result: CareStatus[] = []
-  for (const type of CARE_TYPES) {
-    const meta = CARE_META[type]
-    const intervalField = meta.intervalField
-    const interval = intervalField ? plant[intervalField] : null
-    const last = await db
-      .select()
+  const lastByKind = new Map(
+    db
+      .select({ kind: careLogs.kind, lastAt: max(careLogs.createdAt) })
       .from(careLogs)
-      .where(and(eq(careLogs.plantId, plantId), eq(careLogs.kind, type)))
-      .orderBy(desc(careLogs.createdAt))
-      .limit(1)
-      .get()
-    const dueAt = last && interval ? last.createdAt + interval * 86400 : null
-    result.push({
+      .where(eq(careLogs.plantId, plantId))
+      .groupBy(careLogs.kind)
+      .all()
+      .map((r) => [r.kind as string, Number(r.lastAt)]),
+  )
+  return buildCareStatuses(plant, lastByKind)
+}
+
+/** Compute due/overdue status for every care type given each type's last done timestamp. */
+export function buildCareStatuses(
+  plant: typeof plants.$inferSelect,
+  lastByKind: Map<string, number | null>,
+): CareStatus[] {
+  const now = Date.now() / 1000
+  return CARE_TYPES.map((type) => {
+    const meta = CARE_META[type]
+    const interval = meta.intervalField ? plant[meta.intervalField] : null
+    const lastAt = lastByKind.get(type) ?? null
+    const dueAt = lastAt != null && interval ? lastAt + interval * 86400 : null
+    return {
       type,
       dueAt,
-      overdue: dueAt ? now > dueAt : false,
-      lastDoneAt: last?.createdAt ?? null,
-    })
-  }
-  return result
+      overdue: dueAt != null && now > dueAt,
+      lastDoneAt: lastAt,
+    }
+  })
 }

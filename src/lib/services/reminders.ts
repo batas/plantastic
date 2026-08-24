@@ -55,7 +55,6 @@ async function pollHaSensors() {
 
   const deviceMap = getAllDeviceMappings()
   if (deviceMap.length > 0) {
-    const deviceIds = [...new Set(deviceMap.map((d) => d.haDeviceId))]
     const deviceEntities = new Map<string, { plantId: number; deviceName: string | null }>()
     for (const d of deviceMap) deviceEntities.set(d.haDeviceId, { plantId: d.plantId, deviceName: d.deviceName })
 

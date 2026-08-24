@@ -1,11 +1,7 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { Anthropic } from '@anthropic-ai/sdk'
-import OpenAI from 'openai'
-import { getConfig, type LlmProvider, maskSecret } from '@/lib/settings'
-import { getPhotosDir } from '@/lib/settings'
+import { getConfig, type LlmProvider } from '@/lib/settings'
 import { getPlantDetail } from '@/lib/services/plants'
 import { getOpbInfo, type OpbPlant } from '@/lib/opb'
+import { chat, photosToImages, parseJsonLoose } from './client'
 import type { CareLog, Photo, Plant, SensorReading } from '@/lib/db/schema'
 
 export interface CarePlanResult {
@@ -40,16 +36,7 @@ export function stripJsonBlock(planText: string): string {
   return planText.replace(/\n*---\s*\n*```json\s*\n?\{[\s\S]*?\}\s*\n?```?\s*$/m, '').trim()
 }
 
-type OpenAIContent = OpenAI.Chat.Completions.ChatCompletionContentPart[]
-type AnthropicContent = Anthropic.ContentBlockParam[]
-
-function photoBase64(photo: Photo): { data: string; mime: "image/png" | "image/webp" | "image/jpeg" } {
-  const abs = path.join(getPhotosDir(), photo.path)
-  const buf = readFileSync(abs)
-  const ext = photo.path.split('.').pop()?.toLowerCase() ?? 'jpg'
-  const mime: "image/png" | "image/webp" | "image/jpeg" = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
-  return { data: buf.toString('base64'), mime }
-}
+const TRUNCATION_NOTE = '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.'
 
 function buildSystemPrompt(): string {
   return [
@@ -149,7 +136,7 @@ function buildOpbSection(opb: OpbPlant | null): string {
   return parts.join('\n')
 }
 
-function buildUserPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlantDetail>>, opb: OpbPlant | null, photoCount: number): string {
+function buildUserPrompt(plant: Plant, detail: NonNullable<Awaited<ReturnType<typeof getPlantDetail>>>, opb: OpbPlant | null, photoCount: number): string {
   const lastWater = detail?.careLogs.find((c) => c.kind === 'water')
   const lastFert = detail?.careLogs.find((c) => c.kind === 'fertilize')
   const lastRepotted = plant.lastRepottedAt ? Math.round((Date.now() / 1000 - plant.lastRepottedAt) / 86400) : null
@@ -182,131 +169,6 @@ function buildUserPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlan
   return lines.filter((l) => l != null).join('\n')
 }
 
-async function withOpenAi(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
-  const cfg = getConfig()
-  const model = cfg.llm?.model ?? 'gpt-4o-mini'
-  console.log(`[llm] openai: model=${model} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
-  const client = new OpenAI({ apiKey: cfg.llm?.apiKey })
-  const detail = await getPlantDetail(plantId)
-  const plant = detail!.plant
-  const content: OpenAIContent = []
-  content.push({ type: 'text', text: buildUserPrompt(plant, detail, opb, photoCount) })
-  for (const photo of detail!.photos) {
-    const { data, mime } = photoBase64(photo)
-    content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } })
-    if (content.length > photoCount) break
-  }
-  const res = await client.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: buildSystemPrompt() },
-      { role: 'user', content },
-    ],
-    max_tokens: 4096,
-  })
-  const plan = res.choices[0]?.message?.content ?? ''
-  const truncated = res.choices[0]?.finish_reason === 'length'
-  return { provider: 'openai', model, plan: truncated ? plan + '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.' : plan, generatedAt: Date.now() }
-}
-
-async function withAnthropic(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
-  const cfg = getConfig()
-  const model = cfg.llm?.model ?? 'claude-3-5-sonnet-latest'
-  console.log(`[llm] anthropic: model=${model} apiKey=${maskSecret(cfg.llm?.apiKey)}`)
-  const client = new Anthropic({ apiKey: cfg.llm?.apiKey })
-  const detail = await getPlantDetail(plantId)
-  const plant = detail!.plant
-  const content: AnthropicContent = []
-  content.push({ type: 'text', text: buildUserPrompt(plant, detail, opb, photoCount) })
-  for (const photo of detail!.photos) {
-    const { data, mime } = photoBase64(photo)
-    content.push({ type: 'image', source: { type: 'base64', media_type: mime, data } })
-    if (content.length > photoCount) break
-  }
-  const res = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    system: buildSystemPrompt(),
-    messages: [{ role: 'user', content }],
-  })
-  const text = res.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-  const truncated = res.stop_reason === 'max_tokens'
-  return { provider: 'anthropic', model, plan: truncated ? text + '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.' : text, generatedAt: Date.now() }
-}
-
-async function withOllama(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
-  const cfg = getConfig()
-  const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:11434/v1'
-  const model = cfg.llm?.model ?? 'llava'
-  console.log(`[llm] ollama: model=${model} baseURL=${baseURL}`)
-  const client = new OpenAI({ baseURL, apiKey: 'ollama' })
-  const detail = await getPlantDetail(plantId)
-  const plant = detail!.plant
-  const content: OpenAIContent = []
-  content.push({ type: 'text', text: buildUserPrompt(plant, detail, opb, photoCount) })
-  for (const photo of detail!.photos) {
-    const { data, mime } = photoBase64(photo)
-    content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } })
-    if (content.length > photoCount) break
-  }
-  const res = await client.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: buildSystemPrompt() },
-      { role: 'user', content },
-    ],
-    max_tokens: 4096,
-  })
-  const plan = res.choices[0]?.message?.content ?? ''
-  const truncated = res.choices[0]?.finish_reason === 'length'
-  return { provider: 'ollama', model, plan: truncated ? plan + '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.' : plan, generatedAt: Date.now() }
-}
-
-async function withLiteLLM(plantId: number, photoCount: number, opb: OpbPlant | null): Promise<CarePlanResult> {
-  const cfg = getConfig()
-  const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
-  const model = cfg.llm?.model ?? 'gpt-4o-mini'
-  const apiKey = cfg.llm?.apiKey
-  console.log(`[llm] litellm: model=${model} baseURL=${base} apiKey=${maskSecret(apiKey)}`)
-  if (!apiKey) throw new Error('Brak klucza API dla LiteLLM. Skonfiguruj go w ustawieniach.')
-  const detail = await getPlantDetail(plantId)
-  const plant = detail!.plant
-  const content: OpenAIContent = []
-  content.push({ type: 'text', text: buildUserPrompt(plant, detail, opb, photoCount) })
-  for (const photo of detail!.photos) {
-    const { data, mime } = photoBase64(photo)
-    content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } })
-    if (content.length > photoCount) break
-  }
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'x-litellm-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user', content },
-      ],
-      max_tokens: 4096,
-    }),
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`LiteLLM ${res.status}: ${err.slice(0, 300)}`)
-  }
-  const data = await res.json() as Record<string, unknown>
-  const text = Array.isArray(data.choices) ? ((data.choices[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content ?? '' : ''
-  const truncated = Array.isArray(data.choices) && ((data.choices[0] as Record<string, unknown>)?.finish_reason) === 'length'
-  return { provider: 'litellm', model, plan: truncated ? String(text) + '\n\n> ⚠️ Plan został obcięty z powodu limitu tokenów. Spróbuj ponownie.' : String(text), generatedAt: Date.now() }
-}
-
 export async function generateCarePlan(plantId: number, provider?: LlmProvider, photoCount: number = 4): Promise<CarePlanResult> {
   const cfg = getConfig()
   const selected = provider ?? cfg.llm?.provider ?? 'ollama'
@@ -314,25 +176,22 @@ export async function generateCarePlan(plantId: number, provider?: LlmProvider, 
     throw new Error(`Brak klucza API dla providera ${selected}. Skonfiguruj go w ustawieniach.`)
   }
   const detail = await getPlantDetail(plantId)
-  const opb = detail?.plant?.scientificName ? await getOpbInfo(detail.plant.scientificName) : null
-  let result: CarePlanResult
-  if (selected === 'anthropic') result = await withAnthropic(plantId, photoCount, opb)
-  else if (selected === 'openai') result = await withOpenAi(plantId, photoCount, opb)
-  else if (selected === 'litellm') result = await withLiteLLM(plantId, photoCount, opb)
-  else result = await withOllama(plantId, photoCount, opb)
+  if (!detail) throw new Error('Nie znaleziono rośliny')
+  const opb = detail.plant.scientificName ? await getOpbInfo(detail.plant.scientificName) : null
 
-  const intervals = parseCareIntervals(result.plan)
-    if (intervals) {
-      const clean: Record<string, number> = {}
-      for (const [k, v] of Object.entries(intervals)) {
-        if (typeof v === 'number' && v > 0) clean[k] = Math.round(v)
-      }
-      if (Object.keys(clean).length > 0) {
-        result.intervals = intervals
-        result.plan = stripJsonBlock(result.plan)
-      }
-    }
-  return result
+  const result = await chat({
+    system: buildSystemPrompt(),
+    prompt: buildUserPrompt(detail.plant, detail, opb, photoCount),
+    images: photosToImages(detail.photos, photoCount),
+    maxTokens: 4096,
+  }, selected)
+
+  let plan = result.truncated ? result.text + TRUNCATION_NOTE : result.text
+  const intervals = parseCareIntervals(plan)
+  if (intervals) {
+    plan = stripJsonBlock(plan)
+  }
+  return { provider: result.provider, model: result.model, plan, generatedAt: Date.now(), intervals }
 }
 
 export async function generateCarePlanWithContext(plantId: number, provider?: LlmProvider): Promise<{ plan: CarePlanResult; context: unknown }> {
@@ -352,7 +211,7 @@ export interface SensorCheckResult {
   model: string
 }
 
-function buildSensorCheckPrompt(plant: Plant, detail: Awaited<ReturnType<typeof getPlantDetail>>): string {
+function buildSensorCheckPrompt(plant: Plant, detail: NonNullable<Awaited<ReturnType<typeof getPlantDetail>>>): string {
   const now = new Date()
   const season = now.getMonth() >= 2 && now.getMonth() < 5 ? 'wiosna' : now.getMonth() >= 5 && now.getMonth() < 8 ? 'lato' : now.getMonth() >= 8 && now.getMonth() < 11 ? 'jesień' : 'zima'
   const lastWater = detail?.careLogs.find((c) => c.kind === 'water')
@@ -372,8 +231,6 @@ function buildSensorCheckPrompt(plant: Plant, detail: Awaited<ReturnType<typeof 
     '',
     buildSensorHistory(detail?.latestReadings ?? {}),
     '',
-    buildOpbSection(null),
-    '',
     'Oceń na podstawie powyższych danych czy roślina necesita zabiegu pielęgnacyjnego.',
     'Jeśli TAK — podaj jaki zabieg i dlaczego.',
     'Jeśli NIE — podaj dlaczego nic nie trzeba robić.',
@@ -383,7 +240,7 @@ function buildSensorCheckPrompt(plant: Plant, detail: Awaited<ReturnType<typeof 
 
 const SENSOR_CHECK_SYSTEM = [
   'Jesteś botanikiem ekspertem. Analizujesz dane z czujników wilgotności gleby, temperatury, wilgotności powietrza i światła.',
-  'Twoim zadaniem jest podjęcie DECYZJI: czy roślina necesita teraz zabiegu pielęgnacyjnego (podlewania, zraszania, obracania).',
+  'Twoim zadaniem jest podjęcie DECYZJI: czy roślina potrzebuje teraz zabiegu pielęgnacyjnego (podlewania, zraszania, obracania).',
   '',
   'Odpowiadaj TYLKO w formacie JSON (bez żadnego tekstu wokół):',
   '{',
@@ -397,89 +254,10 @@ const SENSOR_CHECK_SYSTEM = [
   '- "mist": wilgotność powietrza niska, roślina wymaga zraszania',
   '- "rotate": roślina nierówno rośnie (mierzono światło)',
   '- "none": parametry w normie, nic nie trzeba robić',
-  '- "high": pilne (roślina może ucierpieć)',  '- "medium": warto zrobić w ciągu 1-2 dni',
+  '- "high": pilne (roślina może ucierpieć)', '- "medium": warto zrobić w ciągu 1-2 dni',
   '- "low": drobna korekta, nie pilne',
   'Bądź konkretny i opieraj się na danych z czujników.',
 ].join('\n')
-
-async function callLlmForSensorCheck(plantId: number, provider: LlmProvider): Promise<SensorCheckResult> {
-  const detail = await getPlantDetail(plantId)
-  if (!detail) throw new Error('Nie znaleziono rośliny')
-  const plant = detail.plant
-  const userPrompt = buildSensorCheckPrompt(plant, detail)
-  let text = ''
-
-  if (provider === 'anthropic') {
-    const cfg = getConfig()
-    const model = cfg.llm?.model ?? 'claude-3-5-sonnet-latest'
-    const client = new Anthropic({ apiKey: cfg.llm?.apiKey })
-    const res = await client.messages.create({
-      model,
-      max_tokens: 1024,
-      system: SENSOR_CHECK_SYSTEM,
-      messages: [{ role: 'user', content: userPrompt }],
-    })
-    text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
-    return parseSensorCheckJson(text, 'anthropic', model)
-  } else if (provider === 'openai') {
-    const cfg = getConfig()
-    const model = cfg.llm?.model ?? 'gpt-4o-mini'
-    const client = new OpenAI({ apiKey: cfg.llm?.apiKey })
-    const res = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: SENSOR_CHECK_SYSTEM },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 1024,
-    })
-    text = res.choices[0]?.message?.content ?? ''
-    return parseSensorCheckJson(text, 'openai', model)
-  } else if (provider === 'litellm') {
-    const cfg = getConfig()
-    const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
-    const model = cfg.llm?.model ?? 'gpt-4o-mini'
-    const apiKey = cfg.llm?.apiKey
-    if (!apiKey) throw new Error('Brak klucza API dla LiteLLM')
-    const res = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, 'x-litellm-api-key': apiKey },
-      body: JSON.stringify({ model, messages: [{ role: 'system', content: SENSOR_CHECK_SYSTEM }, { role: 'user', content: userPrompt }], max_tokens: 1024 }),
-    })
-    if (!res.ok) throw new Error(`LiteLLM ${res.status}`)
-    const data = await res.json() as Record<string, unknown>
-    text = Array.isArray(data.choices) ? String(((data.choices[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content ?? '') : ''
-    return parseSensorCheckJson(text, 'litellm', model)
-  } else {
-    const cfg = getConfig()
-    const baseURL = cfg.llm?.baseUrl ?? 'http://localhost:11434/v1'
-    const model = cfg.llm?.model ?? 'llava'
-    const client = new OpenAI({ baseURL, apiKey: 'ollama' })
-    const res = await client.chat.completions.create({
-      model,
-      messages: [{ role: 'system', content: SENSOR_CHECK_SYSTEM }, { role: 'user', content: userPrompt }],
-      max_tokens: 1024,
-    })
-    text = res.choices[0]?.message?.content ?? ''
-    return parseSensorCheckJson(text, 'ollama', model)
-  }
-}
-
-function parseSensorCheckJson(text: string, provider: string, model: string): SensorCheckResult {
-  // Try to find JSON in the response
-  const jsonMatch = text.match(/\{[\s\S]*?\}/)
-  if (!jsonMatch) {
-    return { action: 'none', reason: 'Nie udało się sparsować odpowiedzi AI', urgency: 'low', provider, model }
-  }
-  try {
-    const parsed = JSON.parse(jsonMatch[0])
-    const action = ['water', 'mist', 'rotate', 'none'].includes(parsed.action) ? parsed.action : 'none'
-    const urgency = ['high', 'medium', 'low'].includes(parsed.urgency) ? parsed.urgency : 'low'
-    return { action, reason: String(parsed.reason ?? 'Brak wyjaśnienia'), urgency, provider, model }
-  } catch {
-    return { action: 'none', reason: 'Nie udało się sparsować odpowiedzi AI', urgency: 'low', provider, model }
-  }
-}
 
 export async function generateSensorReminder(plantId: number, provider?: LlmProvider): Promise<SensorCheckResult> {
   const cfg = getConfig()
@@ -487,5 +265,23 @@ export async function generateSensorReminder(plantId: number, provider?: LlmProv
   if (!cfg.llm?.apiKey && selected !== 'ollama') {
     throw new Error(`Brak klucza API dla providera ${selected}. Skonfiguruj go w ustawieniach.`)
   }
-  return callLlmForSensorCheck(plantId, selected)
+  const detail = await getPlantDetail(plantId)
+  if (!detail) throw new Error('Nie znaleziono rośliny')
+
+  const result = await chat({
+    system: SENSOR_CHECK_SYSTEM,
+    prompt: buildSensorCheckPrompt(detail.plant, detail),
+    maxTokens: 1024,
+  }, selected)
+
+  const parsed = parseJsonLoose<{ action?: string; reason?: string; urgency?: string }>(result.text)
+  const actions = ['water', 'mist', 'rotate', 'none'] as const
+  const urgencies = ['high', 'medium', 'low'] as const
+  return {
+    action: parsed && actions.includes(parsed.action as typeof actions[number]) ? parsed.action as SensorCheckResult['action'] : 'none',
+    reason: parsed?.reason ? String(parsed.reason) : 'Nie udało się sparsować odpowiedzi AI',
+    urgency: parsed && urgencies.includes(parsed.urgency as typeof urgencies[number]) ? parsed.urgency as SensorCheckResult['urgency'] : 'low',
+    provider: result.provider,
+    model: result.model,
+  }
 }

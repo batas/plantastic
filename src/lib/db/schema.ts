@@ -107,7 +107,7 @@ export const sensorReadings = sqliteTable(
     unit: text('unit'),
     measuredAt: integer('measured_at').notNull().default(sql`(unixepoch())`),
   },
-  (t) => [index('readings_plant_metric_idx').on(t.plantId, t.metric)],
+  (t) => [index('readings_plant_metric_idx').on(t.plantId, t.metric), index('readings_latest_idx').on(t.plantId, t.metric, t.measuredAt)],
 )
 
 export const deviceMappings = sqliteTable(

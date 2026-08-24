@@ -42,7 +42,7 @@ export default async function PlantPage(props: PageProps<"/plants/[id]">) {
   ])
   const plantMappings = allMappings.filter((m) => m.plantId === plantId)
   const plantDeviceMappings = getDeviceMappings(plantId)
-  let entityNames: Record<string, string> = {}
+  const entityNames: Record<string, string> = {}
   try {
     const states = await getStates()
     for (const s of states) entityNames[s.entity_id] = (s.attributes.friendly_name as string) ?? s.entity_id

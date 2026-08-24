@@ -1,10 +1,5 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import OpenAI from 'openai'
-import { Anthropic } from '@anthropic-ai/sdk'
-import { getConfig, type LlmProvider, maskSecret } from '@/lib/settings'
-import { getPhotosDir } from '@/lib/settings'
 import { getPlantDetail } from '@/lib/services/plants'
+import { chat, parseJsonLoose, photosToImages, type ChatImage } from './client'
 
 export interface PlantIdentification {
   scientificName: string | null
@@ -22,25 +17,6 @@ export interface HealthVerdict {
   advice: string[]
 }
 
-type Provider = LlmProvider
-
-function readImageBase64(photoPath: string): { data: string; mime: string } {
-  const abs = path.join(getPhotosDir(), photoPath)
-  const buf = readFileSync(abs)
-  const ext = photoPath.split('.').pop()?.toLowerCase() ?? 'jpg'
-  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
-  return { data: buf.toString('base64'), mime }
-}
-
-function selectedProvider(): Provider {
-  const cfg = getConfig()
-  return cfg.llm?.provider ?? 'ollama'
-}
-
-function apiKeyRequired(): string {
-  return getConfig().llm?.apiKey ?? ''
-}
-
 const IDENTIFY_PROMPT =
   'Zidentyfikuj roślinę na zdjęciu. Odpowiedz TYLKO poprawnym JSON (bez markdownu) w formacie: ' +
   '{"scientificName": "łacińska nazwa gatunku lub null", "commonName": "polska lub potoczna nazwa", ' +
@@ -53,93 +29,22 @@ ${context}
 Odpowiedz TYLKO poprawnym JSON (bez markdownu):
 {"status": "healthy" | "needs_attention" | "problems", "confidence": 0-1, "summary": "jedno zdanie po polsku o ogólnym stanie", "issues": ["konkretne zauważone problemy, np. żółknięcie liści, przesuszenie; puste jeśli brak"], "advice": ["konkretne zalecenia po polsku"]}`
 
-function parseJson<T>(text: string): T {
-  const cleaned = text.replace(/```json|```/g, '').trim()
-  const start = cleaned.indexOf('{')
-  const end = cleaned.lastIndexOf('}')
-  if (start === -1 || end === -1) {
+function parseJsonStrict<T>(text: string): T {
+  const parsed = parseJsonLoose<T>(text)
+  if (!parsed) {
     throw new Error(`LLM nie zwrócił poprawnego JSON. Odpowiedź: "${text.slice(0, 500)}"`)
   }
-  const jsonStr = cleaned.slice(start, end + 1)
-  try {
-    return JSON.parse(jsonStr) as T
-  } catch (e) {
-    throw new Error(`Błąd parsowania JSON od LLM: ${e instanceof Error ? e.message : e}. Surowy tekst: "${jsonStr.slice(0, 500)}"`)
-  }
+  return parsed
 }
 
-async function callVision(prompt: string, images: { data: string; mime: string }[]): Promise<string> {
-  const cfg = getConfig()
-  const provider = selectedProvider()
-  if (provider === 'anthropic') {
-    if (!cfg.llm?.apiKey) throw new Error('Brak klucza API dla Anthropic')
-    const model = cfg.llm.model ?? 'claude-3-5-sonnet-latest'
-    console.log(`[llm] identify/anthropic: model=${model} apiKey=${maskSecret(cfg.llm.apiKey)}`)
-    const client = new Anthropic({ apiKey: cfg.llm.apiKey })
-    const content: Anthropic.ContentBlockParam[] = [{ type: 'text', text: prompt }]
-    for (const img of images) {
-      content.push({ type: 'image', source: { type: 'base64', media_type: img.mime as 'image/png' | 'image/jpeg' | 'image/webp', data: img.data } })
-    }
-    const res = await client.messages.create({ model, max_tokens: 800, messages: [{ role: 'user', content }] })
-    return res.content
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n')
-  }
-
-  const apiKey = provider === 'ollama' ? 'ollama' : (cfg.llm?.apiKey ?? '')
-  const model = provider === 'ollama' ? cfg.llm?.model ?? 'llava' : cfg.llm?.model ?? 'gpt-4o-mini'
-
-  if (provider === 'litellm') {
-    if (!apiKey) throw new Error('Brak klucza API dla LiteLLM')
-    const base = (cfg.llm?.baseUrl ?? 'http://localhost:4000').replace(/\/+$/, '')
-    console.log(`[llm] identify/litellm: model=${model} baseURL=${base} apiKey=${maskSecret(apiKey)}`)
-    const parts: { type: string; text?: string; image_url?: { url: string } }[] = [{ type: 'text', text: prompt }]
-    for (const img of images) {
-      parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } })
-    }
-    const res = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'x-litellm-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: parts }],
-        max_tokens: 800,
-        response_format: { type: 'json_object' },
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.text()
-      throw new Error(`LiteLLM ${res.status}: ${err.slice(0, 300)}`)
-    }
-    const data = await res.json() as Record<string, unknown>
-    return Array.isArray(data.choices) ? String(((data.choices[0] as Record<string, unknown>)?.message as Record<string, unknown>)?.content ?? '') : ''
-  }
-
-  const baseURL = provider === 'ollama' ? cfg.llm?.baseUrl ?? 'http://localhost:11434/v1' : undefined
-  console.log(`[llm] identify/${provider}: model=${model} baseURL=${baseURL ?? '(default)'} apiKey=${provider === 'ollama' ? '(ollama)' : maskSecret(apiKey)}`)
-  const client = new OpenAI({ apiKey, baseURL })
-  const parts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text: prompt }]
-  for (const img of images) {
-    parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${img.data}` } })
-  }
-  const res = await client.chat.completions.create({
-    model,
-    messages: [{ role: 'user', content: parts }],
-    max_tokens: 800,
-    response_format: { type: 'json_object' },
-  })
-  return res.choices[0]?.message?.content ?? ''
+async function callVision(prompt: string, images: ChatImage[]): Promise<string> {
+  const result = await chat({ prompt, images, maxTokens: 800, json: true })
+  return result.text
 }
 
-export async function identifyPlant(image: { data: string; mime: string }): Promise<PlantIdentification> {
-  void apiKeyRequired
+export async function identifyPlant(image: ChatImage): Promise<PlantIdentification> {
   const text = await callVision(IDENTIFY_PROMPT, [image])
-  const raw = parseJson<Partial<PlantIdentification>>(text)
+  const raw = parseJsonStrict<Partial<PlantIdentification>>(text)
   return {
     scientificName: raw.scientificName ?? null,
     commonName: raw.commonName ?? null,
@@ -162,9 +67,9 @@ export async function healthCheck(plantId: number): Promise<HealthVerdict> {
     `Czujniki: ${readings || 'brak'}`,
     `Ostatnie podlewanie: ${lastWater ? new Date(lastWater.createdAt * 1000).toLocaleString('pl-PL') : 'brak'}`,
   ].join('\n')
-  const images = detail.photos.slice(0, 4).map((p) => readImageBase64(p.path))
+  const images = photosToImages(detail.photos, 4)
   const text = await callVision(HEALTH_PROMPT(detail.plant.name, context), images)
-  const raw = parseJson<Partial<HealthVerdict>>(text)
+  const raw = parseJsonStrict<Partial<HealthVerdict>>(text)
   return {
     status: raw.status === 'needs_attention' || raw.status === 'problems' || raw.status === 'healthy' ? raw.status : 'needs_attention',
     confidence: typeof raw.confidence === 'number' ? raw.confidence : null,
