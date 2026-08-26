@@ -4,22 +4,25 @@ import { plants, timelineEntries } from '@/lib/db/schema'
 import { createTask } from './tasks'
 import { processTask } from './task-processors'
 
-const CHECK_INTERVAL_MS = 60 * 60 * 1000 // check every hour
-const DAILY_CHECK_MS = 24 * 60 * 60 * 1000 // but only process once per day
-
-let lastRun = 0
+const CHECK_INTERVAL_MS = 60 * 60 * 1000
+const STARTUP_DELAY_MS = 3 * 60 * 1000
 
 export function startPlanRegenerator() {
-  setInterval(async () => {
-    try {
-      const now = Date.now()
-      if (now - lastRun < DAILY_CHECK_MS) return
-      lastRun = now
-      await regenerateDuePlans()
-    } catch (err) {
-      console.error('[planRegenerator]', err)
-    }
+  const initial = setTimeout(() => {
+    void tick()
+  }, STARTUP_DELAY_MS)
+  initial.unref()
+  setInterval(() => {
+    void tick()
   }, CHECK_INTERVAL_MS).unref()
+}
+
+async function tick() {
+  try {
+    await regenerateDuePlans()
+  } catch (err) {
+    console.error('[planRegenerator]', err)
+  }
 }
 
 async function regenerateDuePlans() {
@@ -28,7 +31,10 @@ async function regenerateDuePlans() {
 
   // Filter to plants where carePlanDays is set (not null, > 0)
   const enabled = allPlants.filter((p) => p.carePlanDays != null && p.carePlanDays > 0)
-  if (enabled.length === 0) return
+  if (enabled.length === 0) {
+    console.log(`[planRegenerator] brak roślin z włączonym auto-planem (carePlanDays)`)
+    return
+  }
 
   console.log(`[planRegenerator] checking ${enabled.length} plants`)
 
