@@ -17,6 +17,7 @@ interface SettingsData {
   ha: { url: string; hasToken: boolean; todoEntity: string; notifyEnabled: boolean; notifyDaysOverdue: number }
   llm: { provider: string; model: string; hasApiKey: boolean; baseUrl: string }
   opb: { hasClientId: boolean; hasSecret: boolean }
+  care: { autoPlanDays: number }
   connected: boolean
 }
 
@@ -148,6 +149,7 @@ export default function SettingsClient({
           notifyDaysOverdue: Number(cfg.ha.notifyDaysOverdue) || 1,
         },
         llm: { provider: cfg.llm.provider, model: cfg.llm.model, baseUrl: cfg.llm.baseUrl },
+        care: { autoPlanDays: Math.max(0, Number(cfg.care?.autoPlanDays ?? 7) || 0) },
         opb: {},
       }
       if (pw) body.mqtt = { ...(body.mqtt as object), password: pw }
@@ -418,6 +420,19 @@ export default function SettingsClient({
                 </button>
               </div>
             </div>
+          </div>
+          <div>
+            <label className={label}>Automatyczne plany pielęgnacji — cykl w dniach</label>
+            <input
+              className={input + " max-w-32"}
+              type="number"
+              min={0}
+              value={cfg.care?.autoPlanDays ?? 7}
+              onChange={(e) => setCfg((c) => ({ ...c, care: { autoPlanDays: Number(e.target.value) || 0 } }))}
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              AI odświeża plan każdej rośliny co tyle dni. 0 = wyłączone globalnie. Można nadpisać per roślina (pole „Auto-plan” na formularzu rośliny: 0 = wyłączona, puste = wg tej wartości).
+            </p>
           </div>
         </div>
       </section>

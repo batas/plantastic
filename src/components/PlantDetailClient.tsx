@@ -27,6 +27,7 @@ export default function PlantDetailClient({
   sensorMappings,
   deviceMappings,
   entityNames,
+  autoPlanGlobal,
 }: {
   detail: Detail
   careStatus: CareStatus[]
@@ -34,6 +35,7 @@ export default function PlantDetailClient({
   sensorMappings: { id: number; plantId: number; topic: string; metric: string; source: string }[]
   deviceMappings: { id: number; plantId: number; haDeviceId: string; deviceName: string | null; createdAt: number }[]
   entityNames: Record<string, string>
+  autoPlanGlobal?: number
 }) {
   const router = useRouter()
   const { plant } = detail
@@ -232,9 +234,13 @@ export default function PlantDetailClient({
           <section className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
             <h2 className="mb-3 font-semibold">Następne zabiegi</h2>
             <NextCareChips careStatus={careStatus} />
-            {plant.carePlanDays != null && plant.carePlanDays > 0 && (
-              <p className="mt-2 text-xs text-zinc-400">🤖 Auto-plan co {plant.carePlanDays} dni</p>
-            )}
+            {(() => {
+              const global = autoPlanGlobal ?? 0
+              const effective = plant.carePlanDays != null && plant.carePlanDays > 0 ? plant.carePlanDays : plant.carePlanDays === 0 ? 0 : global
+              return effective > 0 ? (
+                <p className="mt-2 text-xs text-zinc-400">🤖 Auto-plan co {effective} dni{plant.carePlanDays == null && " (z ustawień globalnych)"}</p>
+              ) : null
+            })()}
             {plant.sensorCheck && (
               <p className="mt-1 text-xs text-zinc-400">📡 Inteligentne przypomnienia z czujników (codziennie LLM)</p>
             )}

@@ -1,6 +1,7 @@
 import { desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { plants, timelineEntries } from '@/lib/db/schema'
+import { plants, timelineEntries, type Plant } from '@/lib/db/schema'
+import { getConfig } from '@/lib/settings'
 import { createTask } from './tasks'
 import { processTask } from './task-processors'
 
@@ -27,12 +28,19 @@ async function tick() {
 
 async function regenerateDuePlans() {
   const now = Math.floor(Date.now() / 1000)
-  const allPlants = db.select().from(plants).all()
+  const cfg = getConfig()
+  const globalDays = cfg.autoPlanDays ?? 0
+  // per-plant override: >0 = own cycle, 0 = off, null/undefined = inherit global
+  const effectiveDays = (p: Plant): number => {
+    if (p.carePlanDays != null && p.carePlanDays > 0) return p.carePlanDays
+    if (p.carePlanDays === 0) return 0
+    return globalDays > 0 ? globalDays : 0
+  }
 
-  // Filter to plants where carePlanDays is set (not null, > 0)
-  const enabled = allPlants.filter((p) => p.carePlanDays != null && p.carePlanDays > 0)
+  const allPlants = db.select().from(plants).all()
+  const enabled = allPlants.filter((p) => effectiveDays(p) > 0)
   if (enabled.length === 0) {
-    console.log(`[planRegenerator] brak roślin z włączonym auto-planem (carePlanDays)`)
+    console.log(`[planRegenerator] wyłączony — auto_plan_days=0 i żadna roślina nie ma własnego cyklu`)
     return
   }
 
@@ -40,7 +48,7 @@ async function regenerateDuePlans() {
 
   let generated = 0
   for (const plant of enabled) {
-    const days = plant.carePlanDays!
+    const days = effectiveDays(plant)
     const cutoff = now - days * 86400
 
     // Find most recent care_plan entry

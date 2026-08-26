@@ -28,6 +28,9 @@ export async function GET() {
       hasClientId: Boolean(cfg.opb?.clientId),
       hasSecret: Boolean(cfg.opb?.secret),
     },
+    care: {
+      autoPlanDays: cfg.autoPlanDays ?? 7,
+    },
     connected: isConnected(),
   })
 }
@@ -57,6 +60,9 @@ export async function POST(request: Request) {
   if (body.opb) {
     if (body.opb.clientId !== undefined) patch.opb_client_id = String(body.opb.clientId)
     if (body.opb.secret !== undefined) patch.opb_secret = String(body.opb.secret)
+  }
+  if (body.care) {
+    if (body.care.autoPlanDays !== undefined) patch.auto_plan_days = Math.max(0, Number(body.care.autoPlanDays) || 0)
   }
   writeOptions(patch)
   if (body.mqtt) {

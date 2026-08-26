@@ -4,6 +4,7 @@ import { getPlantDetail, getNextCareDates, getPlant } from "@/lib/services/plant
 import { getSensorMappings, getDeviceMappings } from "@/lib/services/sensors"
 import { getStates } from "@/lib/ha"
 import { getOpbInfo, translateOpbGuide, type OpbPlant } from "@/lib/opb"
+import { getConfig } from "@/lib/settings"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { plants } from "@/lib/db/schema"
@@ -52,7 +53,7 @@ export default async function PlantPage(props: PageProps<"/plants/[id]">) {
       <Link href="/" className="text-sm text-zinc-500 hover:underline">
         ← Wróć
       </Link>
-      <PlantDetailClient detail={detail} careStatus={careStatus ?? []} opbGuide={opb} sensorMappings={plantMappings} deviceMappings={plantDeviceMappings} entityNames={entityNames} />
+      <PlantDetailClient detail={detail} careStatus={careStatus ?? []} opbGuide={opb} sensorMappings={plantMappings} deviceMappings={plantDeviceMappings} entityNames={entityNames} autoPlanGlobal={getConfig().autoPlanDays ?? 7} />
     </div>
   )
 }

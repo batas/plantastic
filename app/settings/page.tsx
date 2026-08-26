@@ -37,6 +37,7 @@ export default async function SettingsPage() {
             baseUrl: cfg.llm?.baseUrl ?? "",
           },
           opb: { hasClientId: Boolean(cfg.opb?.clientId), hasSecret: Boolean(cfg.opb?.secret) },
+          care: { autoPlanDays: cfg.autoPlanDays ?? 7 },
           connected: isConnected(),
         },
         mappings: plantsWithNames,

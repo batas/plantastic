@@ -305,11 +305,12 @@ export default function PlantForm({
           <input
             className={input}
             type="number"
-            min={1}
+            min={0}
             value={form.carePlanDays}
             onChange={(e) => set("carePlanDays", e.target.value)}
-            placeholder="np. 7 (puste = brak)"
+            placeholder="puste = wg ustawień globalnych"
           />
+          <p className="mt-1 text-xs text-zinc-400">0 = wyłączony dla tej rośliny, puste = cykl z Ustawień (Pielęgnacja AI)</p>
         </div>
         <div className="flex items-center gap-2 pt-6">
           <input

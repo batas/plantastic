@@ -30,6 +30,8 @@ export interface AppConfig {
     secret?: string
   }
   reminderEnabled?: boolean
+  /** AI care plan auto-regeneration cycle in days (0 = disabled); per-plant carePlanDays overrides this */
+  autoPlanDays?: number
 }
 
 function readOptions(): Record<string, unknown> {
@@ -82,6 +84,7 @@ export function getConfig(): AppConfig {
       secret: (opts.opb_secret as string) ?? process.env.OPB_SECRET,
     },
     reminderEnabled: opts.reminder_enabled !== false,
+    autoPlanDays: Number(opts.auto_plan_days ?? 7),
   }
 }
 
