@@ -3,7 +3,8 @@
   "version": "0.0.1-dev",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/gen-build-info.mjs && next dev",
+    "prebuild": "node scripts/gen-build-info.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

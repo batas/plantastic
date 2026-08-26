@@ -6,6 +6,9 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+ARG SOURCE_COMMIT=""
+ARG SOURCE_BRANCH=""
+ENV SOURCE_COMMIT=${SOURCE_COMMIT} SOURCE_BRANCH=${SOURCE_BRANCH}
 RUN npm run build
 
 FROM ${BUILD_FROM}
